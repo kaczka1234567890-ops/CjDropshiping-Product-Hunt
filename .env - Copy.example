@@ -1,0 +1,8 @@
+# Copy this file to .env and enter your own token locally.
+# Never commit .env or paste the token into source code.
+CJ_ACCESS_TOKEN=YOUR_CJ_API_KEY_HERE
+CJ_API_BASE_URL=https://developers.cjdropshipping.com/api2.0/v1
+# Confirm these endpoints against your CJ API docs/account.
+CJ_PRODUCT_LIST_PATH=/product/listV2
+CJ_PRODUCT_DETAIL_PATH=/product/query
+PORT=3000
