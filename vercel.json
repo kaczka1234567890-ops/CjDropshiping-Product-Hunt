@@ -15,8 +15,5 @@
       "src": "/(.*)",
       "dest": "/web/$1"
     }
-  ],
-  "env": {
-    "NODE_ENV": "production"
-  }
+  ]
 }
