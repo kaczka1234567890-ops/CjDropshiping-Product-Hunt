@@ -1,0 +1,9 @@
+node_modules/
+.env
+.data/
+server.err
+server.log
+.cj-token-cache.json
+*.zip
+store-assets/screenshots/
+store-assets/harness/
