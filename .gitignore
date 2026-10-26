@@ -3,3 +3,9 @@ node_modules/
 .DS_Store
 .cj-token-cache.json
 data/
+server.err
+server.log
+*.zip
+store-assets/screenshots/
+store-assets/harness/
+.vercel/
