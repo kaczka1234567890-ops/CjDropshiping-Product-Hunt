@@ -1,5 +1,4 @@
 import express from "express";
-import dotenv from "dotenv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
@@ -26,8 +25,6 @@ import { analyzeProduct, sortProducts, estimateProfit } from "./scoring.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
-dotenv.config({ path: path.join(projectRoot, ".env") });
-
 // ── Supabase client (service role — server-side only) ────
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
