@@ -1,62 +1,87 @@
-# CJdropshipping Winning Product Hunter — Local POC
+# CJ Product Hunter — Cloud Edition
 
-This is a small, local-first starter project. It provides:
-- A local web dashboard
-- A Chrome Extension popup
-- A backend proxy so the CJ token is not exposed to the browser
-- Basic profit estimation and an explicitly preliminary score
+Hunt CJdropshipping winning products from a Chrome side panel: search, score, sales/review
+enrichment, supplier info and one-click listing — with **accounts, usage limits and an admin
+panel** so you can sell or distribute access.
 
-## Important limitations
-1. CJ API endpoint, parameters, token type, and authentication header can vary by API version/account. Verify these against your own official CJ API documentation before testing. The adapter currently uses `CJ-Access-Token` and `/product/listV2` as configurable starting assumptions, not a guarantee.
-2. This POC does not prove demand, sales volume, or competition. Trend providers are not connected yet. Score fields that lack evidence are labelled as unknown/neutral rather than being represented as verified market facts.
-3. Keep the token in `.env` only. Do not share it or commit `.env` to Git.
-4. Only use API access and data collection methods permitted by CJ and each external provider.
+Each user pastes **their own CJdropshipping API key once**; it is validated against CJ and
+stored **encrypted (AES-256-GCM)** on the server. Nothing sensitive lives in the extension.
 
-## Requirements
-- Node.js 20+ (Node 22 recommended)
-- Chrome or Chromium for the extension
+## How it fits together
 
-## Run locally
-1. Extract this folder.
-2. Open a terminal in this folder.
-3. Run `npm install`.
-4. Copy `.env.example` to `.env`.
-   - Windows PowerShell: `Copy-Item .env.example .env`
-   - macOS/Linux: `cp .env.example .env`
-5. Put your CJ token in `.env` locally.
-6. Verify `CJ_API_BASE_URL`, `CJ_PRODUCT_LIST_PATH`, and authentication header with your official CJ API docs.
-7. Run `npm start`.
-8. Open http://localhost:3000
+```
+Chrome extension (side panel)          Web (Vercel)                Supabase
+┌──────────────────────────┐   HTTPS   ┌──────────────────┐  SQL   ┌─────────────┐
+│ popup.js / sidepanel.html│ ────────► │ Express /api/*   │ ─────► │ auth        │
+│ · sign in / sign up      │  Bearer   │ · auth, keys     │        │ profiles    │
+│ · paste CJ API key (⚙)   │  token    │ · CJ proxy       │        │ user_api_keys│
+│ · search / enrich / list │           │ · admin panel    │        │ policies    │
+└──────────────────────────┘           └──────────────────┘        │ usage_logs  │
+                                                                   └─────────────┘
+```
 
-If CJ returns an authentication or parameter error, the dashboard will show a readable message. Check the terminal and CJ API docs; do not paste your token into a chat.
+- **No Supabase client in the browser** — the server uses the service-role key only, and
+  every RPC/policy is locked down so only the backend can touch the data.
+- Per-user CJ keys are bound per-request (`AsyncLocalStorage`), so concurrent users can
+  never use each other's key.
+- Admin panel at `/admin`: block/unblock users, daily & monthly API limits, block devices,
+  toggle features (search/listing/enrich), view usage logs and admin audit trail.
 
-## Load the Chrome Extension
-1. Open `chrome://extensions`.
-2. Turn on Developer mode.
-3. Choose **Load unpacked**.
-4. Select the `extension` folder.
-5. Start the local backend (`npm start`) before using the extension.
+## Repository
 
-## Current API contract
-The server tries:
-`GET {CJ_API_BASE_URL}{CJ_PRODUCT_LIST_PATH}?pageNum=1&pageSize=20&productName={query}`
+- GitHub: <https://github.com/kaczka1234567890-ops/CjDropshiping-Product-Hunt>
+- Full setup guide: **[DEPLOYMENT.md](./DEPLOYMENT.md)** (Supabase → Vercel → extension)
 
-The exact query parameters and response envelope must be checked against your CJ API version. If the API uses different parameters, update `server/cjClient.js`. Do not disable TLS verification.
+## Features
 
-## POC score
-The score is a rough workflow demonstration, not a validated prediction:
-- Profit potential: up to 25 points, based on estimated margin when a product price is available
-- Data completeness: up to 25 points
-- Shipping evidence: up to 15 points (unknown stays neutral/low)
-- Stock evidence: up to 15 points
-- Trend and competition: not connected yet, so no invented signal is added
+- 🔍 Product search with filters (price, stock, shipping, country) and trending/best-selling modes
+- 📊 Scoring, profit estimation, sales & review enrichment
+- 🏷️ One-click listing preview/publish to your CJ store
+- 👤 Accounts (sign up / sign in) with session tokens
+- 🔑 Per-user CJ API key — encrypted at rest, never shipped to the client
+- 🛡️ Admin panel: block users, usage limits, device blocking, usage logs, audit log
+- 📱 Chrome MV3 side panel (opens on toolbar click) + optional popup
 
-The model should be calibrated with real data before using it for decisions.
+## Quick start (local development)
 
-## Next milestones
-1. Confirm CJ API auth, product search, detail, inventory, and shipping endpoints.
-2. Normalize API response shapes and add pagination/rate-limit handling.
-3. Add saved products and local persistence.
-4. Add trend-provider adapters after confirming access and permitted usage.
-5. Add country-specific landed cost and currency conversion.
-6. Add authentication before exposing the dashboard outside localhost.
+```bash
+npm install
+# fill .env — see .env.example (Supabase URL, service-role key, ENCRYPTION_KEY)
+npm start          # http://localhost:3000
+```
+
+Point the extension at the backend:
+
+```bash
+npm run set-url http://localhost:3000     # or your deployed URL
+```
+
+Then load `extension/` via `chrome://extensions` → **Load unpacked**.
+
+The server refuses to start until `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` and
+`ENCRYPTION_KEY` are set — see [DEPLOYMENT.md](./DEPLOYMENT.md).
+
+## Project layout
+
+```
+server/          Express backend (auth, CJ proxy, admin API)
+web/             Sign-in page + admin panel (static, served by Vercel)
+extension/       Chrome MV3 extension (side panel + popup)
+supabase-schema.sql   Run once in the Supabase SQL editor
+scripts/         set-backend-url.mjs (npm run set-url)
+store-assets/    Chrome Web Store screenshots & promo art
+```
+
+## Security notes
+
+1. `.env` is gitignored and `.vercelignore`d — never commit API keys.
+2. User CJ keys are stored encrypted (`ENCRYPTION_KEY`, 64-hex, AES-256-GCM) in
+   `user_api_keys`; only the server can decrypt them.
+3. `data/` (local cache + legacy settings) is gitignored and `.vercelignore`d.
+4. Auth endpoints are rate-limited per IP (signup 5/10min, login 10/5min).
+5. Only use API access and data-collection methods permitted by CJ and each provider.
+
+## License / attribution
+
+Prototype built on CJdropshipping's public API. Verify endpoints and quota rules against
+your own CJ API documentation before production use.

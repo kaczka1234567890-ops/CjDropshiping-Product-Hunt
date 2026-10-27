@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CJ Product Hunter</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <!-- Auth overlay (shown until the account is verified) -->
+  <div id="authOverlay">
+    <div class="auth-card">
+      <div class="logo">PH</div>
+      <h2>CJ Product Hunter</h2>
+      <p class="sub">Sign in to start hunting winning products.</p>
+      <p class="auth-msg" id="authMsg" role="status"></p>
+
+      <div id="nameWrap" hidden>
+        <label for="authName">Full name (optional)</label>
+        <input id="authName" type="text" autocomplete="name" placeholder="Your name">
+      </div>
+
+      <label for="authEmail">Email</label>
+      <input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com">
+
+      <label for="authPassword">Password</label>
+      <input id="authPassword" type="password" autocomplete="current-password" placeholder="••••••••">
+
+      <button class="btn-full" id="authBtn" type="button">Sign in</button>
+
+      <p class="switch">
+        <span id="authSwitchText">Don't have an account?</span>
+        <button id="toggleAuth" type="button">Sign up</button>
+      </p>
+
+      <p class="auth-hint">Only setup needed: paste your CJdropshipping API key once
+        (<code>My CJ → API</code>) — then search, score and list products.</p>
+    </div>
+  </div>
+
+  <!-- Main App (hidden until authenticated) -->
+  <div id="app" class="hidden">
+    <div class="head">
+      <div class="mark">PH</div>
+      <div>
+        <strong>Product Hunter</strong>
+        <small>CJdropshipping</small>
+      </div>
+      <div class="user-bar" id="userBar">
+        <span class="email" id="userEmail" title=""></span>
+        <button type="button" class="btn-sm" id="settingsBtn" title="CJdropshipping API Key">⚙ Key</button>
+        <button type="button" class="btn-sm" id="logoutBtn">Logout</button>
+      </div>
+    </div>
+
+    <div id="blockedMsg" class="blocked-msg hidden"></div>
+
+    <details class="filters" id="filterPanel">
+      <summary>⚙ Filters</summary>
+      <div class="fgrid">
+        <label>Min price ($)<input type="number" id="fMinPrice" min="0" step="0.01" placeholder="8"></label>
+        <label>Max price ($)<input type="number" id="fMaxPrice" min="0" step="0.01" placeholder="60"></label>
+        <label>Min stock<input type="number" id="fMinStock" min="0" step="1" placeholder="100"></label>
+        <label>Deliver to:
+          <select id="fDeliverTo">
+            <option value="US" selected>US</option>
+            <option value="GB">GB</option><option value="CA">CA</option>
+            <option value="AU">AU</option><option value="DE">DE</option>
+            <option value="FR">FR</option><option value="JP">JP</option>
+          </select>
+        </label>
+      </div>
+      <label class="check"><input type="checkbox" id="fFreeShip"> Free shipping</label>
+      <label class="check"><input type="checkbox" id="fQuickDelivery"> 🚀 Quick delivery</label>
+    </details>
+
+    <form id="searchForm" class="search">
+      <input id="query" placeholder="e.g. desk lamp" autocomplete="off">
+      <button type="submit" id="searchButton">Hunt</button>
+    </form>
+
+    <div class="modes">
+      <button type="button" id="trendingButton" class="chip">🔥 Trending</button>
+      <button type="button" id="bestSellingButton" class="chip">🛒 Best-Selling</button>
+    </div>
+
+    <div id="status" class="status">Ready</div>
+    <div id="message" class="message"></div>
+    <div id="results" class="results"></div>
+
+    <div id="detailModal" class="modal" hidden>
+      <div class="modal-card">
+        <button class="modal-close" id="modalClose" type="button">×</button>
+        <div id="modalBody"></div>
+      </div>
+    </div>
+
+    <div id="listingModal" class="modal" hidden>
+      <div class="modal-card modal-card-wide">
+        <button class="modal-close" id="listingClose" type="button">×</button>
+        <div id="listingBody"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CJ API Key settings -->
+  <div id="settingsModal" class="modal" hidden>
+    <div class="modal-card">
+      <button class="modal-close" id="settingsClose" type="button">×</button>
+      <h3>🔑 CJdropshipping API Key</h3>
+      <p class="mdesc">Paste <strong>your own</strong> CJ API key once — it is validated with CJ, then stored
+        encrypted on our server. The extension never keeps it on your device.</p>
+      <div class="mrow"><span>Status</span><strong id="cjKeyMeta">Checking…</strong></div>
+      <div class="set-row">
+        <input id="cjKeyInput" type="password" placeholder="Paste API key here (…@api@…)" autocomplete="off" spellcheck="false">
+        <button type="button" id="cjKeyToggle" class="info-btn">Show</button>
+      </div>
+      <p class="mnote">Where to find it: log in to CJdropshipping → <strong>My CJ → API</strong> → copy the API Key.</p>
+      <div class="mactions">
+        <button type="button" id="cjKeySave" class="lp-btn lp-btn-primary">Save API Key</button>
+        <button type="button" id="cjKeyRemove" class="info-btn">Remove saved key</button>
+      </div>
+      <div id="cjKeyStatus" class="message"></div>
+    </div>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

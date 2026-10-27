@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CJ Product Hunter — Admin</title>
+  <link rel="stylesheet" href="/admin.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brandmark">AD</div>
+    <div><div class="brand">Admin Panel</div><div class="subbrand">CJ Product Hunter</div></div>
+    <div class="status" id="status">Checking...</div>
+    <button type="button" id="logoutBtn" class="btn-secondary">Logout</button>
+  </header>
+
+  <main class="container">
+    <nav class="tabs">
+      <button class="tab active" data-tab="users">Users</button>
+      <button class="tab" data-tab="usage">Usage Logs</button>
+      <button class="tab" data-tab="settings">Settings</button>
+    </nav>
+
+    <!-- Users Tab -->
+    <section id="tab-users" class="tab-content">
+      <div class="section-head">
+        <h2>Users</h2>
+        <button class="btn-secondary" id="refreshUsers">↺ Refresh</button>
+      </div>
+      <div id="userList" class="user-list">Loading...</div>
+    </section>
+
+    <!-- Usage Tab -->
+    <section id="tab-usage" class="tab-content hidden">
+      <div class="section-head">
+        <h2>Usage Logs</h2>
+        <div class="head-actions">
+          <select id="usageLimit"><option value="50">50</option><option value="100">100</option><option value="200">200</option></select>
+          <button class="btn-secondary" id="refreshUsage">↺ Refresh</button>
+        </div>
+      </div>
+      <div id="usageSummary" class="usage-summary"></div>
+      <table class="data-table" id="usageTable">
+        <thead><tr><th>Time</th><th>User</th><th>Endpoint</th><th>IP</th><th>Device</th><th>Code</th></tr></thead>
+        <tbody id="usageBody"></tbody>
+      </table>
+      <div class="pager" id="usagePager"></div>
+    </section>
+
+    <!-- Settings Tab -->
+    <section id="tab-settings" class="tab-content hidden">
+      <div class="section-head"><h2>System</h2></div>
+      <div class="settings-grid">
+        <div class="setting-card">
+          <h3>Status</h3>
+          <div id="systemInfo"></div>
+          <div class="mactions">
+            <button class="btn-danger" id="resetAllDaily">Reset all daily counters</button>
+          </div>
+          <p class="mnote">Counters also reset automatically at 00:00 UTC. Per-user limits are set from the Users tab → Details.</p>
+        </div>
+        <div class="setting-card">
+          <h3>Recent admin actions</h3>
+          <div id="auditList"><p class="message">Loading…</p></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- User Detail Modal -->
+  <div id="userModal" class="modal" hidden>
+    <div class="modal-card modal-card-wide">
+      <button class="modal-close" id="modalClose" type="button">×</button>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/admin.js"></script>
+</body>
+</html>

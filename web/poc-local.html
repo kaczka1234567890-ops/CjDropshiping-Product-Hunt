@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CJ Product Hunter — Local POC</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brandmark">PH</div>
+    <div><div class="brand">Product Hunter</div><div class="subbrand">CJdropshipping · Local POC</div></div>
+    <div class="status" id="status">Checking backend…</div>
+    <button type="button" id="settingsBtn" class="settings-btn" title="Settings — CJ API Key">⚙ Settings</button>
+  </header>
+  <main class="container">
+    <section class="hero">
+      <p class="eyebrow">PRODUCT RESEARCH WORKSPACE</p>
+      <h1>Find products worth testing.</h1>
+      <p class="muted">Search CJ products, inspect available data, and estimate profitability. Trend and competition data are not connected in this first POC.</p>
+      <form id="searchForm" class="searchbar">
+        <input id="query" placeholder="Search product name, e.g. desk lamp" aria-label="Product search">
+        <button type="submit" id="searchButton">Search products</button>
+        <button type="button" id="trendingButton" class="button-secondary">🔥 Trending</button>
+        <button type="button" id="bestSellingButton" class="button-secondary">🛒 Best-Selling</button>
+      </form>
+      <details class="filters dash-filters">
+        <summary>Filters — price, stock, shipping, country</summary>
+        <div class="fgrid">
+          <label>Min price ($)<input type="number" id="fMinPrice" min="0" step="0.01" placeholder="e.g. 8"></label>
+          <label>Max price ($)<input type="number" id="fMaxPrice" min="0" step="0.01" placeholder="e.g. 60"></label>
+          <label>Min stock<input type="number" id="fMinStock" min="0" step="1" placeholder="e.g. 100"></label>
+          <label>Ship From:
+            <select id="fCountry">
+              <option value="">Any warehouse</option>
+              <option value="CN">China (CN)</option>
+              <option value="US">United States (US)</option>
+              <option value="TH">Thailand (TH)</option>
+              <option value="GB">United Kingdom (GB)</option>
+              <option value="DE">Germany (DE)</option>
+              <option value="FR">France (FR)</option>
+              <option value="ES">Spain (ES)</option>
+              <option value="IT">Italy (IT)</option>
+              <option value="NL">Netherlands (NL)</option>
+              <option value="CA">Canada (CA)</option>
+              <option value="AU">Australia (AU)</option>
+              <option value="JP">Japan (JP)</option>
+              <option value="KR">South Korea (KR)</option>
+              <option value="SG">Singapore (SG)</option>
+              <option value="MY">Malaysia (MY)</option>
+              <option value="VN">Vietnam (VN)</option>
+              <option value="HK">Hong Kong (HK)</option>
+              <option value="TW">Taiwan (TW)</option>
+            </select>
+          </label>
+          <label>Deliver to:
+            <select id="fDeliverTo">
+              <option value="US" selected>United States (US)</option>
+              <option value="GB">United Kingdom (GB)</option>
+              <option value="CA">Canada (CA)</option>
+              <option value="AU">Australia (AU)</option>
+              <option value="DE">Germany (DE)</option>
+              <option value="FR">France (FR)</option>
+              <option value="ES">Spain (ES)</option>
+              <option value="IT">Italy (IT)</option>
+              <option value="NL">Netherlands (NL)</option>
+              <option value="BE">Belgium (BE)</option>
+              <option value="SE">Sweden (SE)</option>
+              <option value="NO">Norway (NO)</option>
+              <option value="DK">Denmark (DK)</option>
+              <option value="FI">Finland (FI)</option>
+              <option value="PL">Poland (PL)</option>
+              <option value="AT">Austria (AT)</option>
+              <option value="CH">Switzerland (CH)</option>
+              <option value="IE">Ireland (IE)</option>
+              <option value="PT">Portugal (PT)</option>
+              <option value="CZ">Czechia (CZ)</option>
+              <option value="GR">Greece (GR)</option>
+              <option value="RO">Romania (RO)</option>
+              <option value="HU">Hungary (HU)</option>
+              <option value="MX">Mexico (MX)</option>
+              <option value="BR">Brazil (BR)</option>
+              <option value="CL">Chile (CL)</option>
+              <option value="JP">Japan (JP)</option>
+              <option value="KR">South Korea (KR)</option>
+              <option value="SG">Singapore (SG)</option>
+              <option value="MY">Malaysia (MY)</option>
+              <option value="TH">Thailand (TH)</option>
+              <option value="PH">Philippines (PH)</option>
+              <option value="ID">Indonesia (ID)</option>
+              <option value="VN">Vietnam (VN)</option>
+              <option value="NZ">New Zealand (NZ)</option>
+              <option value="AE">United Arab Emirates (AE)</option>
+              <option value="SA">Saudi Arabia (SA)</option>
+              <option value="IN">India (IN)</option>
+              <option value="IL">Israel (IL)</option>
+              <option value="TR">Turkey (TR)</option>
+              <option value="ZA">South Africa (ZA)</option>
+            </select>
+          </label>
+          <label class="check"><input type="checkbox" id="fFreeShip"> Free shipping only</label>
+          <label class="check"><input type="checkbox" id="fQuickDelivery"> 🚀 Quick delivery (stock in deliver-to warehouse)</label>
+          <label class="check"><input type="checkbox" id="fNewListing"> 🆕 New listing (≤ 7 days)</label>
+          <label class="check"><input type="checkbox" id="fNewProduct"> ✨ New product (≤ 30 days)</label>
+          <label class="check"><input type="checkbox" id="fRelisting"> ♻ Re-listing (old → active)</label>
+          <label class="check"><input type="checkbox" id="fNeverListed"> 🚫 Never listed (0 sellers)</label>
+          <label class="check"><button type="button" id="resetFilters" class="button-secondary">↺ Reset filters</button></label>
+        </div>
+      </details>
+    </section>
+
+    <section class="notice">
+      <strong>POC score, not a sales prediction.</strong>
+      <span>The score currently reflects recognized product data only. It does not prove demand, sales, or low competition.</span>
+    </section>
+
+    <section class="section-head">
+      <div><h2>Product results</h2><p class="muted" id="resultCount">Search to load results from CJ.</p></div>
+      <div class="head-actions">
+        <button class="button-secondary" id="exportButton" disabled>Export CSV</button>
+      </div>
+    </section>
+    <div class="pager" id="pager">
+      <button class="button-secondary" id="prevPage" disabled>← Prev</button>
+      <span id="pageInfo">Page 1</span>
+      <button class="button-secondary" id="nextPage" disabled>Next →</button>
+    </div>
+    <div id="message" class="message" role="status">Start by searching for a product.</div>
+    <section id="results" class="product-grid"></section>
+
+    <section class="calculator">
+      <div><p class="eyebrow">QUICK CALCULATOR</p><h2>Estimate net profit</h2><p class="muted">Use your target selling price and all expected costs.</p></div>
+      <form id="profitForm" class="calc-grid">
+        <label>Selling price ($)<input type="number" min="0" step="0.01" value="29.99" name="sellingPrice" required></label>
+        <label>Product cost ($)<input type="number" min="0" step="0.01" value="6" name="productCost" required></label>
+        <label>Shipping ($)<input type="number" min="0" step="0.01" value="4" name="shippingCost" required></label>
+        <label>Ad cost per sale ($)<input type="number" min="0" step="0.01" value="8" name="adCost" required></label>
+        <label>Platform/payment fees ($)<input type="number" min="0" step="0.01" value="2" name="fees" required></label>
+        <label>Other costs ($)<input type="number" min="0" step="0.01" value="1" name="otherCosts" required></label>
+        <button type="submit">Calculate profit</button>
+      </form>
+      <div class="profit-result" id="profitResult">Estimated net profit: <strong>$8.99</strong> <span>(29.99 − 6 − 4 − 8 − 2 − 1)</span></div>
+    </section>
+    <footer>Local-only POC · Add your CJ API Key in Settings (⚙), or keep it in the server-side .env file.</footer>
+  </main>
+  <div id="detailModal" class="modal" hidden>
+    <div class="modal-card">
+      <button class="modal-close" id="modalClose" type="button" aria-label="Close">×</button>
+      <div id="modalBody"></div>
+    </div>
+  </div>
+  <div id="listingModal" class="modal" hidden>
+    <div class="modal-card modal-card-wide">
+      <button class="modal-close" id="listingClose" type="button" aria-label="Close">×</button>
+      <div id="listingBody"></div>
+    </div>
+  </div>
+  <div id="settingsModal" class="modal" hidden>
+    <div class="modal-card">
+      <button class="modal-close" id="settingsClose" type="button" aria-label="Close">×</button>
+      <div class="settings-body">
+        <h3>⚙ Settings</h3>
+        <p class="muted">Paste <strong>your own</strong> CJdropshipping API Key — sign in to your CJ account and copy it, so every user hunts with their own account.</p>
+        <label class="set-label" for="cjKeyInput">CJdropshipping API Key</label>
+        <div class="set-row">
+          <input id="cjKeyInput" type="password" placeholder="Paste API Key here (…@api@…)" autocomplete="off" spellcheck="false">
+          <button type="button" id="cjKeyToggle" class="set-toggle">Show</button>
+        </div>
+        <p class="set-hint">Where to get it: log in to your CJdropshipping account → <strong>My CJ → API</strong> (API Docs) → copy the API Key and paste it above. The key is validated with CJ before saving and is stored only on this machine (<code>data/settings.json</code>), never in the extension.</p>
+        <div class="set-meta" id="cjKeyMeta">Checking current key…</div>
+        <div class="mactions">
+          <button type="button" class="set-remove" id="cjKeyRemove">Remove saved key</button>
+          <button type="button" class="set-save" id="cjKeySave">Save API Key</button>
+        </div>
+        <div class="set-status" id="cjKeyStatus" role="status"></div>
+      </div>
+    </div>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -7,14 +7,21 @@
   <link rel="stylesheet" href="sidepanel.css">
 </head>
 <body class="panel">
+  <div id="app" class="hidden">
   <div class="head">
     <div class="mark">PH</div>
     <div>
       <strong>Product Hunter</strong>
       <small>CJdropshipping · Pinned winning-product panel</small>
     </div>
-    <button type="button" id="settingsBtn" class="set-btn" title="Settings — CJ API Key">⚙</button>
+    <div class="user-bar">
+      <span class="email" id="userEmail" title=""></span>
+      <button type="button" id="settingsBtn" class="btn-sm" title="CJdropshipping API Key">⚙ Key</button>
+      <button type="button" id="logoutBtn" class="btn-sm">Logout</button>
+    </div>
   </div>
+
+  <div id="blockedMsg" class="blocked-msg hidden"></div>
 
   <details class="filters" id="filterPanel">
     <summary>⚙ Filters — price, stock, shipping, country</summary>
@@ -112,7 +119,7 @@
     <button type="button" id="resetFilters" class="chip">↺ Reset filters</button>
   </div>
 
-  <div id="status" class="status">Checking local backend…</div>
+  <div id="status" class="status">Checking your account…</div>
   <div id="message" class="message"></div>
   <div id="results" class="results"></div>
 
@@ -121,7 +128,7 @@
       <button id="openWindow" type="button">Open as always-on window</button>
     </div>
     <p>Click a product to open it on CJdropshipping · “Supplier info” shows vendor details.
-       Panel stays open while you browse. Start backend with <code>npm start</code>.</p>
+       The panel stays open while you browse. Your CJ API key is stored securely on the server.</p>
   </div>
 
   <div id="detailModal" class="modal" hidden>
@@ -157,6 +164,38 @@
         </div>
         <div class="set-status" id="cjKeyStatus" role="status"></div>
       </div>
+    </div>
+  </div>
+  </div><!-- /#app -->
+
+  <!-- Auth overlay (shown until the account is verified) -->
+  <div id="authOverlay">
+    <div class="auth-card">
+      <div class="logo">PH</div>
+      <h2>CJ Product Hunter</h2>
+      <p class="sub">Sign in to start hunting winning products.</p>
+      <p class="auth-msg" id="authMsg" role="status"></p>
+
+      <div id="nameWrap" hidden>
+        <label for="authName">Full name (optional)</label>
+        <input id="authName" type="text" autocomplete="name" placeholder="Your name">
+      </div>
+
+      <label for="authEmail">Email</label>
+      <input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com">
+
+      <label for="authPassword">Password</label>
+      <input id="authPassword" type="password" autocomplete="current-password" placeholder="••••••••">
+
+      <button class="btn-full" id="authBtn" type="button">Sign in</button>
+
+      <p class="switch">
+        <span id="authSwitchText">Don't have an account?</span>
+        <button id="toggleAuth" type="button">Sign up</button>
+      </p>
+
+      <p class="auth-hint">Only setup needed: paste your CJdropshipping API key once
+        (<code>My CJ → API</code>) — then search, score and list products.</p>
     </div>
   </div>
 

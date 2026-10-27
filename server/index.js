@@ -2,15 +2,180 @@ import express from "express";
 import dotenv from "dotenv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { searchProducts, getProductDetail, getProductReviews, getProductSalesInfo, getProductReviewsLite, getCjStores, getVariantList, quoteFreight, saveStoreProduct, saveStoreVariants, createProductConnection, getStoreProductVariants, validateApiKey, clearTokenCache, primeTokenCache } from "./cjClient.js";
-import { getCjApiKey, cjKeySource, setCjApiKey, settingsSummary } from "./settings.js";
+import { createClient } from "@supabase/supabase-js";
+import crypto from "node:crypto";
+import {
+  searchProducts,
+  getProductDetail,
+  getProductReviews,
+  getProductSalesInfo,
+  getProductReviewsLite,
+  getCjStores,
+  getVariantList,
+  quoteFreight,
+  saveStoreProduct,
+  saveStoreVariants,
+  createProductConnection,
+  getStoreProductVariants,
+  validateApiKey,
+  clearTokenCache,
+  primeTokenCache,
+  runWithApiKey
+} from "./cjClient.js";
 import { analyzeProduct, sortProducts, estimateProfit } from "./scoring.js";
-import { recordSnapshots, getMetrics } from "./metrics.js";
-import { getSalesCache, setSalesCache } from "./salesCache.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
 dotenv.config({ path: path.join(projectRoot, ".env") });
+
+// ── Supabase client (service role — server-side only) ────
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !ENCRYPTION_KEY) {
+  const missing = [
+    !SUPABASE_URL && "SUPABASE_URL",
+    !SUPABASE_SERVICE_KEY && "SUPABASE_SERVICE_ROLE_KEY",
+    !ENCRYPTION_KEY && "ENCRYPTION_KEY"
+  ].filter(Boolean);
+  console.error(`
+✗ Missing required environment variable(s) in .env: ${missing.join(", ")}
+
+  Setup:
+    1. Create a free project at https://supabase.com
+    2. In Supabase: SQL Editor → paste supabase-schema.sql → Run
+    3. In Supabase: Settings → API → copy "Project URL" and the service_role key
+    4. Generate an encryption key:
+         node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+    5. Put all three values in .env (see .env.example), then run npm start
+`);
+  process.exit(1);
+}
+
+if (!/^[0-9a-fA-F]{64}$/.test(ENCRYPTION_KEY)) {
+  console.error("✗ ENCRYPTION_KEY must be 64 hex characters (32 bytes). Generate one with:\n" +
+    '  node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
+  process.exit(1);
+}
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false }
+});
+
+// ── Encryption helpers ───────────────────────────────────
+const ALGORITHM = "aes-256-gcm";
+
+function encrypt(plaintext, keyHex) {
+  const key = Buffer.from(keyHex, "hex");
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+  let encrypted = cipher.update(plaintext, "utf8", "base64");
+  encrypted += cipher.final("base64");
+  const authTag = cipher.getAuthTag().toString("base64");
+  return { encrypted, iv: iv.toString("base64"), authTag };
+}
+
+function decrypt(encrypted, iv, authTag, keyHex) {
+  const key = Buffer.from(keyHex, "hex");
+  const ivBuf = Buffer.from(iv, "base64");
+  const tagBuf = Buffer.from(authTag, "base64");
+  const decipher = crypto.createDecipheriv(ALGORITHM, key, ivBuf);
+  decipher.setAuthTag(tagBuf);
+  let decrypted = decipher.update(encrypted, "base64", "utf8");
+  decrypted += decipher.final("utf8");
+  return decrypted;
+}
+
+function fingerprint(key) {
+  return crypto.createHash("sha256").update(key).digest("hex").slice(0, 12);
+}
+
+// ── Auth middleware ──────────────────────────────────────
+function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Authentication required" });
+  }
+  const token = authHeader.slice(7);
+  // Verify JWT with Supabase
+  supabase.auth.getUser(token)
+    .then(({ data }) => {
+      if (!data?.user) return res.status(401).json({ error: "Invalid token" });
+      req.user = data.user;
+      next();
+    })
+    .catch(() => res.status(401).json({ error: "Token verification failed" }));
+}
+
+async function isAdminUser(userId) {
+  const configured = String(process.env.ADMIN_USER_IDS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (configured.includes(userId)) return true;
+  try {
+    const { data } = await supabase
+      .from("profiles")
+      .select("is_admin")
+      .eq("id", userId)
+      .maybeSingle();
+    return Boolean(data?.is_admin);
+  } catch {
+    return false;
+  }
+}
+
+async function requireAdmin(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: "Authentication required" });
+  const allowed = await isAdminUser(req.user.id);
+  if (!allowed) return res.status(403).json({ error: "Admin access required" });
+  next();
+}
+
+// ── User access check ───────────────────────────────────
+async function checkAccess(userId, deviceId) {
+  const { data, error } = await supabase.rpc("check_user_access", {
+    p_user_id: userId,
+    p_device_id: deviceId
+  });
+  if (error) {
+    console.error("check_user_access error:", error.message);
+    return { allowed: true, is_blocked: false, daily_limit: null, monthly_limit: null, daily_used: 0, monthly_used: 0, features: { search: true, listing: true, enrich: true }, reason: null };
+  }
+  return data;
+}
+
+function recordUsage(userId, endpoint, ipAddress, deviceId, responseCode) {
+  supabase.from("usage_logs").insert({
+    user_id: userId,
+    endpoint,
+    ip_address: ipAddress,
+    device_id: deviceId,
+    response_code: responseCode
+  }).catch(err => console.warn("usage log failed:", err.message));
+  supabase.rpc("increment_usage_counts", { p_user_id: userId }).catch(() => {});
+}
+
+function getDeviceId(req) {
+  const forwarded = req.headers["x-forwarded-for"];
+  const ip = forwarded ? forwarded.split(",")[0].trim() : req.socket.remoteAddress || "unknown";
+  const ua = req.headers["user-agent"] || "unknown";
+  return crypto.createHash("sha256").update(`${ip}:${ua}`).digest("hex").slice(0, 16);
+}
+
+async function registerDevice(userId, deviceId, userAgent, ipAddress) {
+  const { error } = await supabase.from("user_devices").upsert({
+    user_id: userId,
+    device_id: deviceId,
+    user_agent: userAgent,
+    ip_address: ipAddress,
+    last_seen: new Date().toISOString()
+  }, { onConflict: "user_id,device_id" });
+  if (error) console.warn("device register failed:", error.message);
+}
+
+// ── App setup ───────────────────────────────────────────
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
@@ -19,670 +184,604 @@ app.use(express.static(path.join(projectRoot, "web")));
 
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
 
-function requireCjToken(res) {
-  if (getCjApiKey()) return true;
-  res.status(503).json({
-    error: "CJ API is not configured.",
-    detail: "Open Settings (⚙) and paste your CJdropshipping API Key, or set CJ_ACCESS_TOKEN in .env. Never share the key in the extension."
-  });
-  return false;
+// ── Auth endpoints ──────────────────────────────────────
+// Very small in-memory limiter: stops brute-force / signup spam per IP.
+const authHits = new Map();
+function rateLimited(key, max, windowMs) {
+  const now = Date.now();
+  const bucket = authHits.get(key) || { count: 0, start: now };
+  if (now - bucket.start > windowMs) {
+    bucket.count = 0;
+    bucket.start = now;
+  }
+  bucket.count += 1;
+  authHits.set(key, bucket);
+  if (authHits.size > 5000) authHits.clear();
+  return bucket.count > max;
 }
 
-function optionalNumber(value) {
-  if (value === undefined || value === null || value === "") return undefined;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
+function clientIp(req) {
+  const forwarded = req.headers["x-forwarded-for"];
+  return forwarded ? forwarded.split(",")[0].trim() : req.socket.remoteAddress || "unknown";
 }
 
-app.get("/api/health", (_req, res) => {
-  const summary = settingsSummary();
-  res.json({
-    ok: true,
-    cjConfigured: summary.cjKeySet,
-    cjKeySource: summary.cjKeySource,
-    cjKeyMasked: summary.cjKeyMasked,
-    port: PORT,
-    message: summary.cjKeySet
-      ? summary.cjKeySource === "settings"
-        ? `CJ API Key is configured (Settings · ${summary.cjKeyMasked}).`
-        : "CJ API Key is configured locally."
-      : "CJ API Key is not configured. Open Settings (⚙) and paste your key."
-  });
-});
-
-app.get("/api/settings", (_req, res) => {
-  res.json(settingsSummary());
-});
-
-app.post("/api/settings/cj-key", async (req, res) => {
+app.post("/api/auth/signup", async (req, res) => {
+  if (rateLimited(`signup:${clientIp(req)}`, 5, 10 * 60 * 1000)) {
+    return res.status(429).json({ error: "Too many signup attempts. Try again in a few minutes." });
+  }
   try {
-    const apiKey = String(req.body?.apiKey ?? "").trim();
-    if (apiKey) {
-      const result = await validateApiKey(apiKey);
-      setCjApiKey(apiKey);
-      if (result.direct) clearTokenCache();
-      else primeTokenCache(apiKey, result);
-      console.log(`CJ API Key saved via Settings (${settingsSummary().cjKeyMasked}, source: ${cjKeySource()}).`);
-    } else {
-      setCjApiKey("");
-      clearTokenCache();
-      console.log("CJ API Key removed via Settings.");
+    const { email, password, fullName } = req.body || {};
+    if (!email || !password) return res.status(400).json({ error: "Email and password are required." });
+    if (String(password).length < 8) return res.status(400).json({ error: "Password must be at least 8 characters." });
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    if (error) return res.status(400).json({ error: error.message });
+    const userId = data.user?.id;
+    if (userId) {
+      await supabase.from("profiles").upsert({ id: userId, email, full_name: fullName || null });
+      await supabase.from("admin_policies").upsert({ user_id: userId });
     }
-    res.json({ ok: true, ...settingsSummary() });
+    res.json({
+      ok: true,
+      userId: userId || null,
+      needsEmailConfirmation: !data.session,
+      token: data.session?.access_token || null
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/auth/login", async (req, res) => {
+  if (rateLimited(`login:${clientIp(req)}`, 10, 5 * 60 * 1000)) {
+    return res.status(429).json({ error: "Too many login attempts. Try again in a few minutes." });
+  }
+  try {
+    const { email, password } = req.body || {};
+    if (!email || !password) return res.status(400).json({ error: "Email and password are required." });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return res.status(401).json({ error: error.message });
+    res.json({ ok: true, token: data.session.access_token, userId: data.user.id });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/auth/logout", requireAuth, async (req, res) => {
+  await supabase.auth.signOut();
+  res.json({ ok: true });
+});
+
+app.get("/api/auth/me", requireAuth, async (req, res) => {
+  const [{ data: profile }, { data: policy }, { data: keyRow }, isAdmin] = await Promise.all([
+    supabase.from("profiles").select("*").eq("id", req.user.id).maybeSingle(),
+    supabase.from("admin_policies").select("*").eq("user_id", req.user.id).maybeSingle(),
+    supabase.from("user_api_keys").select("id").eq("user_id", req.user.id).maybeSingle(),
+    isAdminUser(req.user.id)
+  ]);
+  res.json({
+    id: req.user.id,
+    email: req.user.email,
+    fullName: profile?.full_name || null,
+    isAdmin,
+    isBlocked: policy?.is_blocked || false,
+    dailyLimit: policy?.daily_api_limit ?? null,
+    monthlyLimit: policy?.monthly_api_limit ?? null,
+    dailyUsed: policy?.daily_api_count ?? 0,
+    monthlyUsed: policy?.monthly_api_count ?? 0,
+    features: policy?.features || { search: true, listing: true, enrich: true },
+    hasCjKey: Boolean(keyRow)
+  });
+});
+
+// ── CJ API Key management ───────────────────────────────
+app.post("/api/keys", requireAuth, async (req, res) => {
+  const { apiKey } = req.body;
+  if (!apiKey) return res.status(400).json({ error: "API key required" });
+  try {
+    const validated = await validateApiKey(apiKey);
+    const fp = fingerprint(apiKey);
+    const { encrypted, iv, authTag } = encrypt(apiKey, ENCRYPTION_KEY);
+    // delete + insert instead of upsert: works whether or not the table has
+    // a unique(user_id) constraint (older databases may not).
+    const { error: delError } = await supabase
+      .from("user_api_keys")
+      .delete()
+      .eq("user_id", req.user.id);
+    if (delError) throw delError;
+    const { error } = await supabase.from("user_api_keys").insert({
+      user_id: req.user.id,
+      key_encrypted: encrypted,
+      key_iv: iv,
+      key_auth_tag: authTag,
+      key_fingerprint: fp
+    });
+    if (error) throw error;
+    if (validated.direct) clearTokenCache();
+    else primeTokenCache(apiKey, validated);
+    res.json({ ok: true, fingerprint: fp });
   } catch (error) {
     res.status(error.status || 500).json({ error: error.publicMessage || error.message });
   }
 });
 
-app.get("/api/products", async (req, res) => {
-  const query = String(req.query.q || "").trim();
-  const page = Math.max(1, Number.parseInt(String(req.query.page || "1"), 10) || 1);
-  const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(req.query.pageSize || "20"), 10) || 20));
-  const sort = String(req.query.sort || "winning");
-  const trending = String(req.query.trending || "") === "1";
-  const freeShipping = String(req.query.freeShipping || "") === "1";
-  const minStock = optionalNumber(req.query.minStock);
-  const minPrice = optionalNumber(req.query.minPrice);
-  const maxPrice = optionalNumber(req.query.maxPrice);
-  const countryCode = String(req.query.country || "").trim() || undefined;
-  const quick = String(req.query.quick || "") === "1";
-  const deliverTo = String(req.query.deliverTo || "").trim().toUpperCase() || undefined;
-  const effectiveCountry = countryCode || (quick ? (deliverTo || "US") : undefined);
-  const quickMark = Boolean(quick && effectiveCountry && String(effectiveCountry).toUpperCase() !== "CN");
+app.get("/api/keys", requireAuth, async (req, res) => {
+  const { data, error } = await supabase
+    .from("user_api_keys")
+    .select("key_fingerprint")
+    .eq("user_id", req.user.id)
+    .maybeSingle();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data ? { exists: true, fingerprint: data.key_fingerprint } : { exists: false });
+});
 
-  if (!requireCjToken(res)) return;
+app.delete("/api/keys", requireAuth, async (req, res) => {
+  await supabase.from("user_api_keys").delete().eq("user_id", req.user.id);
+  clearTokenCache();
+  res.json({ ok: true });
+});
 
-  try {
-    const result = await searchProducts({
-      query,
-      page,
-      pageSize,
-      trending,
-      freeShipping,
-      minStock,
-      minPrice,
-      maxPrice,
-      countryCode: effectiveCountry,
-      orderBy: sort === "listed_desc" ? 1 : undefined,
-      sort: "desc"
+// Get decrypted key for server-side use
+async function getUserApiKey(userId) {
+  const { data, error } = await supabase
+    .from("user_api_keys")
+    .select("key_encrypted, key_iv, key_auth_tag")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return decrypt(data.key_encrypted, data.key_iv, data.key_auth_tag, ENCRYPTION_KEY);
+}
+
+// ── CJ API proxy ────────────────────────────────────────
+// Runs the handler with the *calling user's* decrypted CJ key bound to the
+// async context, so concurrent requests can never use another user's key.
+async function withCjKey(userId, res, handler) {
+  const key = await getUserApiKey(userId);
+  if (!key) {
+    return res.status(503).json({
+      error: "CJ API key not configured.",
+      detail: "Open ⚙ Settings in the extension and paste your CJdropshipping API Key."
     });
-    const products = sortProducts(result.products.map((product) => analyzeProduct(product)), sort);
-    if (quickMark) {
-      products.forEach((p) => {
-        if (!p.quickDelivery) p.quickDelivery = true;
+  }
+  return runWithApiKey(key, handler);
+}
+
+app.get("/api/products", requireAuth, async (req, res) => {
+  const deviceId = getDeviceId(req);
+  const access = await checkAccess(req.user.id, deviceId);
+  if (!access.allowed) {
+    return res.status(403).json({ error: access.reason, access });
+  }
+  await registerDevice(req.user.id, deviceId, req.headers["user-agent"], req.ip);
+  
+  try {
+    const result = await withCjKey(req.user.id, res, async (key) => {
+      const query = String(req.query.q || "").trim();
+      const page = Math.max(1, Number.parseInt(String(req.query.page || "1"), 10) || 1);
+      const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(req.query.pageSize || "20"), 10) || 20));
+      const sort = String(req.query.sort || "winning");
+      const trending = String(req.query.trending || "") === "1";
+      const freeShipping = String(req.query.freeShipping || "") === "1";
+      const minStock = req.query.minStock !== undefined ? Number(req.query.minStock) : undefined;
+      const minPrice = req.query.minPrice !== undefined ? Number(req.query.minPrice) : undefined;
+      const maxPrice = req.query.maxPrice !== undefined ? Number(req.query.maxPrice) : undefined;
+      const countryCode = String(req.query.country || "").trim() || undefined;
+      const quick = String(req.query.quick || "") === "1";
+      const deliverTo = String(req.query.deliverTo || "").trim().toUpperCase() || undefined;
+      const effectiveCountry = countryCode || (quick ? (deliverTo || "US") : undefined);
+      const quickMark = Boolean(quick && effectiveCountry && String(effectiveCountry).toUpperCase() !== "CN");
+
+      const result = await searchProducts({
+        query, page, pageSize, trending, freeShipping, minStock, minPrice, maxPrice,
+        countryCode: effectiveCountry, orderBy: sort === "listed_desc" ? 1 : undefined, sort: "desc"
       });
-    }
-    recordSnapshots(products.map((p) => ({ id: p.id, stock: p.stock, listedNum: p.listedNum })));
+      const products = sortProducts(result.products.map(analyzeProduct), sort);
+      if (quickMark) {
+        products.forEach((p) => {
+          if (!p.quickDelivery) { p.quickDelivery = true; }
+        });
+      }
+      return { products, pagination: result.pagination, note: result.note };
+    });
+
+    recordUsage(req.user.id, "/api/products", req.ip, deviceId, 200);
     res.json({
-      products,
-      page,
-      pageSize,
+      products: result.products,
+      page: result.pagination?.pageNum ?? page,
+      pageSize: result.pagination?.pageSize ?? pageSize,
       total: result.pagination?.total ?? null,
       totalPages: result.pagination?.totalPages ?? null,
-      sort,
-      trending,
-      quick,
+      sort, trending, quick,
       shipFrom: effectiveCountry || null,
       deliverTo: deliverTo || null,
       source: "CJdropshipping API 2.0",
       note: result.note || null
     });
   } catch (error) {
+    recordUsage(req.user.id, "/api/products", req.ip, deviceId, error.status || 502);
     console.error("CJ request failed:", error.message);
     res.status(error.status || 502).json({
       error: "Could not retrieve products from CJdropshipping.",
-      detail: error.publicMessage || "Check the API Key, endpoint, parameters, and CJ API points/quota.",
+      detail: error.publicMessage || "Check connection.",
       upstreamStatus: error.upstreamStatus || null
     });
   }
 });
 
-app.get("/api/products/:pid", async (req, res) => {
-  if (!requireCjToken(res)) return;
+app.get("/api/products/:pid", requireAuth, async (req, res) => {
+  const deviceId = getDeviceId(req);
+  const access = await checkAccess(req.user.id, deviceId);
+  if (!access.allowed) return res.status(403).json({ error: access.reason });
+  await registerDevice(req.user.id, deviceId, req.headers["user-agent"], req.ip);
+  
   const pid = String(req.params.pid || "").trim();
-  if (!pid) return res.status(400).json({ error: "Product id (pid) is required." });
+  if (!pid) return res.status(400).json({ error: "Product id required." });
 
   try {
-    const { product, note } = await getProductDetail(pid);
-    const analyzed = analyzeProduct(product);
-    let reviews = null;
-    try {
-      reviews = await getProductReviews(product.id || product.pid || pid);
-    } catch (reviewError) {
-      console.warn("Reviews unavailable:", reviewError.message);
-    }
-
-    let sales = null;
-    try {
-      sales = await getProductSalesInfo(product.id || product.pid || pid);
-    } catch (salesError) {
-      console.warn("Sales info unavailable:", salesError.message);
-    }
-
-    let stock = analyzed.stock;
-    const toNum = (value) => (value === null || value === undefined || value === "" ? NaN : Number(value));
-    if (stock === null || stock === undefined) {
-      const variants = Array.isArray(product?.variants) ? product.variants : [];
-      let sum = 0;
-      let seen = false;
-      variants.forEach((v) => {
-        const invNum = toNum(v?.inventoryNum);
-        if (Number.isFinite(invNum)) { sum += invNum; seen = true; }
-        const invs = Array.isArray(v?.inventories) ? v.inventories : [];
-        invs.forEach((inv) => {
-          const n = toNum(inv?.totalInventory);
-          if (Number.isFinite(n)) { sum += n; seen = true; }
-        });
-      });
-      if (seen) stock = sum;
-    }
-    if ((stock === null || stock === undefined) && sales?.inventoryTotal !== null && sales?.inventoryTotal !== undefined) {
-      stock = sales.inventoryTotal;
-    }
-    analyzed.stock = stock;
-    recordSnapshots([{ id: analyzed.id, stock, listedNum: analyzed.listedNum }]);
-    const metrics = getMetrics(analyzed.id || pid);
-    if (sales || reviews) {
-      setSalesCache(analyzed.id || pid, {
-        totalSales: sales?.totalSales ?? null,
-        sold90d: sales?.sold90d ?? null,
-        lastOrderDate: sales?.lastOrderDate ?? null,
-        rating: reviews?.avgScoreRecent ?? sales?.rating ?? null,
-        reviewTotal: reviews?.total ?? sales?.commentCount ?? null
-      });
-    }
-    const supplier = {
-      name: analyzed.supplierName || sales?.shopName || sales?.supplierNameEn || null,
-      id: analyzed.supplierId || null,
-      website: sales?.supplierWebsite || null,
-      email: null,
-      phone: null,
-      shopName: sales?.shopName || null,
-      shopLogo: sales?.shopLogo || null,
-      hasUSWarehouse: sales?.hasUSWarehouse || false,
-      usInventory: sales?.usInventory ?? null,
-      warehouseCountries: sales?.warehouseCountries || {}
-    };
-    res.json({ product: analyzed, reviews, sales, metrics, supplier, note: note || null });
-  } catch (error) {
-    console.error("CJ detail request failed:", error.message);
-    res.status(error.status || 502).json({
-      error: "Could not retrieve product detail from CJdropshipping.",
-      detail: error.publicMessage || "Check the product detail endpoint in the official CJ API docs.",
-      upstreamStatus: error.upstreamStatus || null
-    });
-  }
-});
-
-app.get("/api/enrich", async (req, res) => {
-  if (!requireCjToken(res)) return;
-  const ids = String(req.query.ids || "").split(",").map((s) => s.trim()).filter(Boolean);
-  const unique = [...new Set(ids)].slice(0, 10);
-  if (!unique.length) {
-    return res.status(400).json({ error: "Provide ids (comma-separated, max 10)." });
-  }
-
-  const spanDays = (win) => {
-    const days = Math.round((Date.parse(win.to) - Date.parse(win.from)) / 86400000);
-    return Number.isFinite(days) && days >= 1 ? days : 1;
-  };
-  const computeEstimates = (id, entry) => {
-    const metrics = getMetrics(id);
-    const w7 = metrics?.windows?.d7 || null;
-    const w30 = metrics?.windows?.d30 || null;
-    let dailyEst = null;
-    let monthlyEst = null;
-    const sources = [];
-    if (w7 && Number(w7.stockChange) > 0) {
-      dailyEst = Math.max(1, Math.round(Number(w7.stockChange) / spanDays(w7)));
-      sources.push("stock drop 7d");
-    }
-    if (w30 && Number(w30.stockChange) > 0) {
-      monthlyEst = Math.max(1, Math.round((Number(w30.stockChange) / spanDays(w30)) * 30));
-      sources.push("stock drop 30d");
-    }
-    const sold90 = Number(entry.sold90d);
-    if (Number.isFinite(sold90) && sold90 > 0) {
-      if (dailyEst === null) { dailyEst = Math.max(1, Math.round(sold90 / 90)); sources.push("CJ 90-day avg"); }
-      if (monthlyEst === null) { monthlyEst = Math.max(1, Math.round(sold90 / 30)); sources.push("CJ 90-day avg"); }
-    }
-    return { dailyEst, monthlyEst, estSource: sources.length ? sources.join(" + ") : null };
-  };
-
-  const NEW_LISTING_DAYS = 7;
-  const NEW_PRODUCT_DAYS = 30;
-  const RELISTING_MIN_AGE_DAYS = 60;
-  const RELISTING_ACTIVE_DAYS = 30;
-  const computeListingFlags = (id, entry) => {
-    const createdMs = entry?.createrTime ? Date.parse(entry.createrTime) : NaN;
-    const daysOld = Number.isFinite(createdMs) ? Math.max(0, Math.floor((Date.now() - createdMs) / 86400000)) : null;
-    const isNewListing = daysOld === null ? null : daysOld <= NEW_LISTING_DAYS;
-    const isNewProduct = daysOld === null ? null : daysOld <= NEW_PRODUCT_DAYS;
-    const payMs = entry?.lastOrderDate ? Date.parse(entry.lastOrderDate) : NaN;
-    const recentPay = Number.isFinite(payMs) && Date.now() - payMs <= RELISTING_ACTIVE_DAYS * 86400000;
-    const sold90 = Number(entry?.sold90d);
-    const active90 = Number.isFinite(sold90) && sold90 > 0;
-    const w7 = getMetrics(id)?.windows?.d7 || null;
-    const restocked = Boolean(w7) && Number(w7.stockChange) < 0;
-    const activeRecent = recentPay || active90 || restocked;
-    const isRelisting = daysOld === null ? null : daysOld >= RELISTING_MIN_AGE_DAYS && activeRecent;
-    return {
-      createrTime: entry?.createrTime ?? null,
-      daysOld,
-      isNewListing,
-      isNewProduct,
-      isRelisting
-    };
-  };
-
-  const items = {};
-  for (const id of unique) {
-    let entry = getSalesCache(id);
-    if (!entry) {
+    const result = await withCjKey(req.user.id, res, async () => {
+      const { product, note } = await getProductDetail(pid);
+      const analyzed = analyzeProduct(product);
+      let reviews = null;
+      try { reviews = await getProductReviews(analyzed.id || pid); } catch (e) { console.warn("Reviews unavailable:", e.message); }
       let sales = null;
-      let lite = null;
-      try { sales = await getProductSalesInfo(id); } catch (error) { console.warn("Enrich sales failed:", error.message); }
-      try { lite = await getProductReviewsLite(id); } catch (error) { console.warn("Enrich reviews failed:", error.message); }
-      if (sales || lite) {
-        entry = {
-          totalSales: sales?.totalSales ?? null,
-          sold90d: sales?.sold90d ?? null,
-          lastOrderDate: sales?.lastOrderDate ?? null,
-          rating: lite?.avgScore ?? sales?.rating ?? null,
-          reviewTotal: lite?.total ?? sales?.commentCount ?? null,
-          createrTime: null
-        };
-        setSalesCache(id, entry);
-      }
-    }
-    if (entry && !entry.createrTime) {
-      try {
-        const { product } = await getProductDetail(id);
-        entry = { ...entry, createrTime: product?.createrTime ?? null };
-        setSalesCache(id, entry);
-      } catch (error) {
-        console.warn("Enrich detail failed:", error.message);
-        if (entry.createrTime === undefined) entry = { ...entry, createrTime: null };
-      }
-    }
-    if (entry) items[id] = { ...entry, ...computeEstimates(id, entry), ...computeListingFlags(id, entry) };
-  }
-  res.json({ items });
-});
+      try { sales = await getProductSalesInfo(analyzed.id || pid); } catch (e) { console.warn("Sales unavailable:", e.message); }
+      return { product: analyzed, reviews, sales, note };
+    });
 
-const LISTING_MARGIN_DEFAULT = 0.3;
-const LISTING_STORE_PREFIX = "cjwin-";
-
-function roundMoney(value) {
-  return Number.isFinite(value) ? Math.round(value * 100) / 100 : null;
-}
-
-function parseAgingDays(aging) {
-  const text = String(aging || "").trim();
-  if (!text) return null;
-  const nums = (text.match(/\d+/g) || []).map(Number).filter(Number.isFinite);
-  if (!nums.length) return null;
-  return { min: Math.min(...nums), max: Math.max(...nums) };
-}
-
-const COUNTRY_NAMES = {
-  CN: "China", US: "United States", GB: "United Kingdom", DE: "Germany", FR: "France",
-  ES: "Spain", IT: "Italy", NL: "Netherlands", BE: "Belgium", SE: "Sweden", NO: "Norway",
-  DK: "Denmark", FI: "Finland", PL: "Poland", AT: "Austria", CH: "Switzerland",
-  IE: "Ireland", PT: "Portugal", CZ: "Czechia", GR: "Greece", RO: "Romania", HU: "Hungary",
-  SK: "Slovakia", HR: "Croatia", BG: "Bulgaria", SI: "Slovenia", LT: "Lithuania",
-  LV: "Latvia", EE: "Estonia", LU: "Luxembourg", MX: "Mexico", BR: "Brazil", CL: "Chile",
-  JP: "Japan", KR: "South Korea", SG: "Singapore", MY: "Malaysia", TH: "Thailand",
-  PH: "Philippines", ID: "Indonesia", VN: "Vietnam", NZ: "New Zealand",
-  AE: "United Arab Emirates", SA: "Saudi Arabia", IN: "India", IL: "Israel",
-  TR: "Turkey", ZA: "South Africa", HK: "Hong Kong", TW: "Taiwan", AU: "Australia",
-  CA: "Canada", CO: "Colombia", PE: "Peru", AR: "Argentina", QA: "Qatar", KW: "Kuwait"
-};
-
-function countryName(code) {
-  return COUNTRY_NAMES[String(code || "").toUpperCase()] || String(code || "United States");
-}
-
-function pickText(...values) {
-  for (const value of values) {
-    if (typeof value === "string" && value.trim()) return value.trim();
-  }
-  return null;
-}
-
-function pickImage(product) {
-  return pickText(product?.bigImage, product?.image, product?.productImage, Array.isArray(product?.images) ? product.images[0] : null);
-}
-
-function cleanName(value) {
-  const text = pickText(value);
-  if (!text) return null;
-  if (text.startsWith("[")) {
-    try {
-      const list = JSON.parse(text);
-      if (Array.isArray(list)) return pickText(...list.map((item) => String(item ?? "")));
-    } catch {
-      return text;
-    }
-  }
-  return text;
-}
-
-function productTitleFrom(product) {
-  return cleanName(product?.productNameEn) || cleanName(product?.nameEn) || cleanName(product?.productName) || cleanName(product?.name) || cleanName(product?.title);
-}
-
-function pickCjStore(stores) {
-  const apiStore = stores.find((store) => store.type === "api");
-  if (apiStore) return { store: apiStore, mode: "cj-store" };
-  const platform = stores.find((store) => store.type && store.type !== "api");
-  if (platform) return { store: platform, mode: "platform-listing" };
-  return { store: null, mode: "none" };
-}
-
-function listingErrorResponse(res, error) {
-  console.error("Listing request failed:", error.message);
-  res.status(error.status || 502).json({
-    error: error.publicMessage || error.message || "Listing request failed.",
-    cjCode: error.cjCode || null,
-    upstreamStatus: error.upstreamStatus || null
-  });
-}
-
-app.get("/api/stores", async (_req, res) => {
-  if (!requireCjToken(res)) return;
-  try {
-    const stores = await getCjStores();
-    const { store, mode } = pickCjStore(stores);
-    res.json({ stores, target: store, mode });
+    recordUsage(req.user.id, "/api/products/:pid", req.ip, deviceId, 200);
+    res.json(result);
   } catch (error) {
-    listingErrorResponse(res, error);
+    recordUsage(req.user.id, "/api/products/:pid", req.ip, deviceId, error.status || 502);
+    res.status(error.status || 502).json({ error: "Could not retrieve product detail.", detail: error.publicMessage });
   }
 });
 
-app.get("/api/listing/preview", async (req, res) => {
-  if (!requireCjToken(res)) return;
+app.get("/api/enrich", requireAuth, async (req, res) => {
+  const deviceId = getDeviceId(req);
+  const access = await checkAccess(req.user.id, deviceId);
+  if (!access.allowed) return res.status(403).json({ error: access.reason });
+  await registerDevice(req.user.id, deviceId, req.headers["user-agent"], req.ip);
+  
+  const ids = String(req.query.ids || "").split(",").map(s => s.trim()).filter(Boolean);
+  const unique = [...new Set(ids)].slice(0, 10);
+  if (!unique.length) return res.status(400).json({ error: "Provide ids (comma-separated, max 10)." });
+
+  try {
+    const result = await withCjKey(req.user.id, res, async () => {
+      const items = {};
+      for (const id of unique) {
+        let sales = null, lite = null;
+        try { sales = await getProductSalesInfo(id); } catch (e) { console.warn("Enrich sales failed:", e.message); }
+        try { lite = await getProductReviewsLite(id); } catch (e) { console.warn("Enrich reviews failed:", e.message); }
+        if (sales || lite) {
+          items[id] = {
+            totalSales: sales?.totalSales ?? null,
+            sold90d: sales?.sold90d ?? null,
+            lastOrderDate: sales?.lastOrderDate ?? null,
+            rating: lite?.avgScore ?? sales?.rating ?? null,
+            reviewTotal: lite?.total ?? sales?.commentCount ?? null,
+            createrTime: null
+          };
+        }
+      }
+      return { items };
+    });
+
+    recordUsage(req.user.id, "/api/enrich", req.ip, deviceId, 200);
+    res.json(result);
+  } catch (error) {
+    recordUsage(req.user.id, "/api/enrich", req.ip, deviceId, error.status || 502);
+    res.status(502).json({ error: "Enrich failed.", detail: error.message });
+  }
+});
+
+app.get("/api/listing/preview", requireAuth, async (req, res) => {
+  const deviceId = getDeviceId(req);
+  const access = await checkAccess(req.user.id, deviceId);
+  if (!access.allowed) return res.status(403).json({ error: "Listing feature disabled." });
+  await registerDevice(req.user.id, deviceId, req.headers["user-agent"], req.ip);
+  
   const pid = String(req.query.pid || "").trim();
-  if (!pid) return res.status(400).json({ error: "pid is required." });
+  if (!pid) return res.status(400).json({ error: "pid required." });
   const country = String(req.query.country || "US").trim().toUpperCase().slice(0, 2) || "US";
   const from = String(req.query.from || "CN").trim().toUpperCase().slice(0, 2) || "CN";
   const margin = Math.max(0, Number(req.query.margin));
-  const marginRate = Number.isFinite(margin) && req.query.margin !== undefined ? margin : LISTING_MARGIN_DEFAULT;
+  const marginRate = Number.isFinite(margin) && req.query.margin !== undefined ? margin : 0.3;
 
   try {
-    const stores = await getCjStores();
-    const { store, mode } = pickCjStore(stores);
-    if (!store) {
-      return res.status(409).json({
-        error: "No enabled store is connected to this CJ account.",
-        detail: "In My CJ → Authorization, add a store (API type) first, then retry."
-      });
-    }
-    if (mode !== "cj-store") {
-      return res.status(409).json({
-        error: `Store "${store.name}" is a ${store.type} store, not a CJ store.`,
-        detail: "This build lists products into a CJ-side (API) store. Connect an API store in My CJ → Authorization."
-      });
-    }
+    const result = await withCjKey(req.user.id, res, async () => {
+      const stores = await getCjStores();
+      const store = stores.find(s => s.type === "api") || stores.find(s => s.type && s.type !== "api") || null;
+      if (!store) throw Object.assign(new Error("No store connected"), { status: 409, publicMessage: "No enabled store connected to this CJ account." });
+      
+      const variants = await getVariantList(pid);
+      if (!variants.length) throw Object.assign(new Error("No variants"), { status: 404, publicMessage: "No variants returned by CJ." });
 
-    const variants = await getVariantList(pid);
-    if (!variants.length) {
-      return res.status(404).json({ error: "No variants returned by CJ for this product." });
-    }
+      let title = null, image = null;
+      try {
+        const { product } = await getProductDetail(pid);
+        title = product?.productNameEn || product?.nameEn || pid;
+        image = product?.bigImage || product?.image || variants.find(v => v.image)?.image || null;
+      } catch (e) { console.warn("Detail skipped:", e.message); }
 
-    let title = null;
-    let image = variants.find((v) => v.image)?.image || null;
-    try {
-      const { product } = await getProductDetail(pid);
-      title = productTitleFrom(product);
-      image = pickImage(product) || image;
-    } catch (detailError) {
-      console.warn("Listing preview detail skipped:", detailError.message);
-    }
+      const heaviest = variants.reduce((max, v) => (v.weight > (max?.weight || 0) ? v : max), variants[0]);
+      let shipping = { price: null, methods: [], note: null, from, to: country, quoted: false };
+      try {
+        const methods = await quoteFreight({ vid: heaviest.vid, endCountryCode: country, startCountryCode: from });
+        const cheapest = methods[0] || null;
+        shipping = { price: cheapest?.price ?? null, name: cheapest?.name ?? null, aging: cheapest?.aging ?? null, from, to: country, quoted: Boolean(cheapest?.price), methods, note: methods.length ? `Shipping quoted ${from} → ${country}` : `No route ${from} → ${country}` };
+      } catch (e) { console.warn("Freight failed:", e.message); }
 
-    const heaviest = variants.reduce((max, v) => ((v.weight || 0) > (max.weight || 0) ? v : max), variants[0]);
-    let shipping = { price: null, methods: [], note: null, from, to: country, estimateDays: null, quoted: false };
-    try {
-      const methods = await quoteFreight({
-        vid: heaviest.vid,
-        endCountryCode: country,
-        startCountryCode: from
-      });
-      const cheapest = methods[0] || null;
-      shipping = {
-        price: cheapest?.price ?? null,
-        name: cheapest?.name ?? null,
-        aging: cheapest?.aging ?? null,
-        estimateDays: parseAgingDays(cheapest?.aging),
-        from,
-        to: country,
-        quoted: Boolean(cheapest?.price),
-        methods,
-        note: methods.length
-          ? `Shipping quoted from ${from} to ${country} for the heaviest variant (${heaviest.weight || "?"}g) — cheapest method selected, auto-calculated.`
-          : `CJ returned no shipping route from ${from} to ${country} for this product — try another Ship From.`
-      };
-    } catch (freightError) {
-      console.warn("Freight quote failed:", freightError.message);
-      shipping = { price: null, name: null, aging: null, estimateDays: null, from, to: country, quoted: false, methods: [], note: "Shipping quote unavailable: " + freightError.message };
-    }
-
-    const shippingPrice = shipping.price ?? 0;
-    const rows = variants.map((v) => {
-      const cjPrice = v.cjPrice ?? 0;
-      const total = roundMoney(cjPrice + shippingPrice);
-      return {
+      const rows = variants.map(v => ({
         ...v,
-        shipping: shippingPrice,
-        total,
-        rrp: roundMoney(cjPrice * (1 + marginRate)),
-        recommended: total ? roundMoney(total * (1 + marginRate)) : null
-      };
+        shipping: shipping.price ?? 0,
+        total: Math.round((v.cjPrice + (shipping.price ?? 0)) * 100) / 100,
+        rrp: Math.round(v.cjPrice * (1 + marginRate) * 100) / 100,
+        recommended: shipping.price !== null ? Math.round((v.cjPrice + shipping.price) * (1 + marginRate) * 100) / 100 : null
+      }));
+
+      return { store, country, shipFrom: from, margin: marginRate, product: { id: pid, title, image }, shipping, variants: rows };
     });
 
-    res.json({
-      store,
-      mode,
-      country,
-      shipFrom: from,
-      margin: marginRate,
-      product: { id: pid, title, image },
-      shipping,
-      variants: rows
-    });
+    recordUsage(req.user.id, "/api/listing/preview", req.ip, deviceId, 200);
+    res.json(result);
   } catch (error) {
-    listingErrorResponse(res, error);
+    recordUsage(req.user.id, "/api/listing/preview", req.ip, deviceId, error.status || 502);
+    res.status(error.status || 502).json({ error: error.publicMessage || error.message, cjCode: error.cjCode });
   }
 });
 
-app.post("/api/listing/publish", async (req, res) => {
-  if (!requireCjToken(res)) return;
+app.post("/api/listing/publish", requireAuth, async (req, res) => {
+  const deviceId = getDeviceId(req);
+  const access = await checkAccess(req.user.id, deviceId);
+  if (!access.allowed) return res.status(403).json({ error: "Listing feature disabled." });
+  await registerDevice(req.user.id, deviceId, req.headers["user-agent"], req.ip);
+  
   const body = req.body || {};
   const pid = String(body.pid || "").trim();
-  if (!pid) return res.status(400).json({ error: "pid is required." });
+  if (!pid) return res.status(400).json({ error: "pid required." });
   const country = String(body.country || "US").trim().toUpperCase().slice(0, 2) || "US";
   const from = String(body.from || "CN").trim().toUpperCase().slice(0, 2) || "CN";
   const prices = body.prices && typeof body.prices === "object" ? body.prices : {};
   const selected = Array.isArray(body.selected) ? body.selected.map(String) : Object.keys(prices);
-  const chosenVids = [...new Set(selected)].filter((vid) => Number(prices[vid]) > 0);
-  if (!chosenVids.length) {
-    return res.status(400).json({ error: "Select at least one variant with a price greater than 0." });
-  }
+  const chosenVids = [...new Set(selected)].filter(vid => Number(prices[vid]) > 0);
+  if (!chosenVids.length) return res.status(400).json({ error: "Select at least one variant with price > 0." });
 
   try {
-    const stores = await getCjStores();
-    const { store, mode } = pickCjStore(stores);
-    if (!store) {
-      return res.status(409).json({
-        error: "No enabled store is connected to this CJ account.",
-        detail: "In My CJ → Authorization, add a store (API type) first, then retry."
-      });
-    }
-    if (mode !== "cj-store") {
-      return res.status(409).json({
-        error: `Store "${store.name}" is a ${store.type} store, not a CJ store.`,
-        detail: "This build lists products into a CJ-side (API) store."
-      });
-    }
+    const result = await withCjKey(req.user.id, res, async () => {
+      const stores = await getCjStores();
+      const store = stores.find(s => s.type === "api") || null;
+      if (!store) throw Object.assign(new Error("No store"), { status: 409, publicMessage: "No CJ store connected." });
 
-    const variants = await getVariantList(pid);
-    const byVid = new Map(variants.map((v) => [v.vid, v]));
-    const rows = chosenVids
-      .map((vid) => ({ variant: byVid.get(vid), price: roundMoney(Number(prices[vid])) }))
-      .filter((row) => row.variant && row.price !== null);
+      const variants = await getVariantList(pid);
+      const byVid = new Map(variants.map(v => [v.vid, v]));
+      const rows = chosenVids.map(vid => ({ variant: byVid.get(vid), price: Math.round(Number(prices[vid]) * 100) / 100 }))
+        .filter(r => r.variant && r.price !== null);
+      if (!rows.length) return res.status(400).json({ error: "No matching variants." });
 
-    if (!rows.length) {
-      return res.status(400).json({ error: "None of the selected variants matched this product's variants." });
-    }
+      let title = rows[0]?.variant?.name || pid;
+      let image = rows[0]?.variant?.image || null;
+      title = String(body.title || title).slice(0, 480);
+      const storeProductId = `cjwin-${pid}`;
+      const pricesOnly = rows.map(r => r.price);
 
-    let title = null;
-    let image = variants.find((v) => v.image)?.image || null;
-    try {
-      const { product } = await getProductDetail(pid);
-      title = productTitleFrom(product);
-      image = pickImage(product) || image;
-    } catch (detailError) {
-      console.warn("Publish detail skipped:", detailError.message);
-    }
-    title = String(body.title || title || pid).slice(0, 480);
+      let savedProduct = false, productExisted = false;
+      try {
+        savedProduct = await saveStoreProduct({ id: storeProductId, shopId: store.id, title, image, description: `Listed from CJ Product Hunter on ${new Date().toISOString().slice(0,10)}.`, priceMin: Math.min(...pricesOnly), priceMax: Math.max(...pricesOnly), currency: store.currency || "USD" });
+      } catch (e) {
+        if (/already exist/i.test(String(e.publicMessage || e.message || ""))) { productExisted = true; savedProduct = true; }
+        else throw e;
+      }
 
-    const pricesOnly = rows.map((r) => r.price);
-    const storeProductId = `${LISTING_STORE_PREFIX}${pid}`;
+      let existingVids = new Set();
+      try {
+        const existing = await getStoreProductVariants(store.id, storeProductId);
+        existingVids = new Set(existing.variants.map(v => v.platformVariantId).filter(Boolean));
+      } catch (e) { console.warn("Preflight skipped:", e.message); }
+      const newRows = rows.filter(r => !existingVids.has(String(r.variant.vid)));
+      const existingCount = rows.length - newRows.length;
+      const warnings = [];
+      if (!savedProduct) warnings.push("CJ did not confirm product save.");
+      if (existingCount) warnings.push(`${existingCount} variant(s) already exist — price cannot be changed via API.`);
 
-    let savedProduct = false;
-    let productExisted = false;
-    try {
-      savedProduct = await saveStoreProduct({
-        id: storeProductId,
-        shopId: store.id,
-        title,
-        image,
-        description: `Listed from CJ Product Hunter on ${new Date().toISOString().slice(0, 10)}.`,
-        priceMin: Math.min(...pricesOnly),
-        priceMax: Math.max(...pricesOnly),
-        currency: store.currency || "USD"
-      });
-    } catch (productError) {
-      const alreadyExists = productError.cjCode === 415 || /already exist/i.test(String(productError.publicMessage || productError.message || ""));
-      if (!alreadyExists) throw productError;
-      productExisted = true;
-      savedProduct = true;
-    }
-
-    const warnings = [];
-    if (!savedProduct) warnings.push("CJ did not confirm the store product save.");
-
-    let existingVids = new Set();
-    try {
-      const existing = await getStoreProductVariants(store.id, storeProductId);
-      existingVids = new Set(existing.variants.map((v) => v.platformVariantId).filter(Boolean));
-    } catch (preflightError) {
-      console.warn("Existing-variant preflight skipped:", preflightError.message);
-    }
-    const newRows = rows.filter((r) => !existingVids.has(String(r.variant.vid)));
-    const existingCount = rows.length - newRows.length;
-    if (existingCount) {
-      warnings.push(
-        `${existingCount} of ${rows.length} variant(s) already exist in your store. CJ's API cannot change an existing variant's price — edit it in My CJ → Products, or delete it there and list again.`
-      );
-    }
-
-    const variantResult = newRows.length
-      ? await saveStoreVariants({
+      let variantResult = { saved: 0, failed: [], rows: [] };
+      if (newRows.length) {
+        variantResult = await saveStoreVariants({
           shopId: store.id,
-          variants: newRows.map((r) => ({
-            id: r.variant.vid,
-            productId: storeProductId,
+          variants: newRows.map(r => ({
+            id: r.variant.vid, productId: storeProductId,
             title: r.variant.name || `${r.variant.color || ""} ${r.variant.size || ""}`.trim() || r.variant.sku,
-            sku: r.variant.sku,
-            image: r.variant.image || image || "",
-            shopPrice: r.price,
-            shopPriceCurrency: store.currency || "USD",
+            sku: r.variant.sku, image: r.variant.image || image || "",
+            shopPrice: r.price, shopPriceCurrency: store.currency || "USD",
             ...(r.variant.weight ? { weight: Math.round(r.variant.weight), weightUnit: "g" } : {})
           }))
-        })
-      : { saved: 0, failed: [], rows: [] };
-
-    if (variantResult.failed.length) warnings.push(`Some variants failed: ${variantResult.failed.join(", ")}`);
-
-    let connected = false;
-    let logistics = String(body.logistics || "").trim();
-    if (!logistics) {
-      try {
-        const methods = await quoteFreight({ vid: rows[0].variant.vid, endCountryCode: country, startCountryCode: from });
-        logistics = methods[0]?.name || "";
-      } catch (freightError) {
-        console.warn("Freight quote for connection skipped:", freightError.message);
-      }
-    }
-    if (logistics && (variantResult.saved > 0 || existingCount > 0)) {
-      try {
-        connected = await createProductConnection({
-          shopId: store.id,
-          cjProductId: pid,
-          platformProductId: storeProductId,
-          logistics,
-          sourceCountryCode: from,
-          sourceCountry: countryName(from),
-          targetCountryCode: country,
-          targetCountry: countryName(country),
-          variantList: rows.map((r) => ({
-            cjVariantId: r.variant.vid,
-            platformVariantId: r.variant.vid
-          }))
         });
-      } catch (connectionError) {
-        const alreadyConnected = /already exist|duplicate/i.test(String(connectionError.publicMessage || connectionError.message || ""));
-        if (alreadyConnected) {
-          connected = true;
-        } else {
-          console.warn("Product connection skipped:", connectionError.message);
-          warnings.push(`Product connection not created: ${connectionError.publicMessage || connectionError.message}`);
+      }
+      if (variantResult.failed.length) warnings.push(`Some variants failed: ${variantResult.failed.join(", ")}`);
+
+      let connected = false;
+      let logistics = String(body.logistics || "").trim();
+      if (!logistics) {
+        try {
+          const methods = await quoteFreight({ vid: rows[0].variant.vid, endCountryCode: country, startCountryCode: from });
+          logistics = methods[0]?.name || "";
+        } catch (e) { console.warn("Freight skipped:", e.message); }
+      }
+      if (logistics && (variantResult.saved > 0 || existingCount > 0)) {
+        try {
+          connected = await createProductConnection({ shopId: store.id, cjProductId: pid, platformProductId: storeProductId, logistics, sourceCountryCode: from, targetCountryCode: country, variantList: rows.map(r => ({ cjVariantId: r.variant.vid, platformVariantId: r.variant.vid })) });
+        } catch (e) {
+          if (/already exist|duplicate/i.test(String(e.publicMessage || e.message || ""))) connected = true;
+          else warnings.push(`Connection not created: ${e.publicMessage || e.message}`);
         }
       }
-    } else if (!logistics) {
-      warnings.push("Product connection skipped: no shipping method was available.");
-    }
 
-    res.json({
-      ok: savedProduct && (variantResult.saved > 0 || existingCount === rows.length),
-      store: { id: store.id, name: store.name, type: store.type },
-      storeProductId,
-      productExisted,
-      existingVariants: existingCount,
-      title,
-      shipFrom: from,
-      logistics: logistics || null,
-      variantsSaved: variantResult.saved,
-      variantsRequested: rows.length,
-      connected,
-      warnings
+      return { ok: savedProduct && (variantResult.saved > 0 || existingCount === rows.length), store: { id: store.id, name: store.name, type: store.type }, storeProductId, productExisted, existingVariants: existingCount, title, shipFrom: from, logistics: logistics || null, variantsSaved: variantResult.saved, variantsRequested: rows.length, connected, warnings };
     });
+
+    recordUsage(req.user.id, "/api/listing/publish", req.ip, deviceId, 200);
+    res.json(result);
   } catch (error) {
-    listingErrorResponse(res, error);
+    recordUsage(req.user.id, "/api/listing/publish", req.ip, deviceId, error.status || 502);
+    res.status(error.status || 502).json({ error: error.publicMessage || error.message, cjCode: error.cjCode });
   }
 });
 
-app.post("/api/profit", (req, res) => {
+app.post("/api/profit", requireAuth, (req, res) => {
   try {
-    const result = estimateProfit(req.body || {});
-    res.json(result);
+    res.json(estimateProfit(req.body || {}));
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
 });
 
-app.get("*", (_req, res) => res.sendFile(path.join(projectRoot, "web", "index.html")));
-
-app.listen(PORT, () => {
-  console.log(`CJ Product Hunter running at http://localhost:${PORT}`);
-  if (!getCjApiKey()) {
-    console.warn("Warning: no CJ API Key found. Open Settings (⚙) and paste your key, or set CJ_ACCESS_TOKEN in .env.");
-  }
+// ── Admin endpoints ─────────────────────────────────────
+app.get("/api/admin/users", requireAuth, requireAdmin, async (req, res) => {
+  const [{ data: profiles }, { data: policies }, { data: deviceRows }, { data: keyRows }] = await Promise.all([
+    supabase.from("profiles").select("id, email, full_name, created_at, updated_at, is_admin"),
+    supabase.from("admin_policies").select("*"),
+    supabase.from("user_devices").select("user_id, device_id, user_agent, ip_address, is_blocked, last_seen"),
+    supabase.from("user_api_keys").select("user_id, key_fingerprint")
+  ]);
+  const deviceMap = {};
+  (deviceRows || []).forEach((d) => {
+    if (!deviceMap[d.user_id]) deviceMap[d.user_id] = [];
+    deviceMap[d.user_id].push(d);
+  });
+  const keyMap = new Map((keyRows || []).map((k) => [k.user_id, k]));
+  const configuredAdmins = String(process.env.ADMIN_USER_IDS || "").split(",").map((s) => s.trim()).filter(Boolean);
+  const users = (profiles || []).map((p) => ({
+    ...p,
+    isAdmin: Boolean(p.is_admin) || configuredAdmins.includes(p.id),
+    hasCjKey: keyMap.has(p.id),
+    keyFingerprint: keyMap.get(p.id)?.key_fingerprint || null,
+    policy: (policies || []).find((pol) => pol.user_id === p.id) || null,
+    devices: deviceMap[p.id] || []
+  }));
+  res.json({ users });
 });
+
+app.post("/api/admin/users/:userId/block", requireAuth, requireAdmin, async (req, res) => {
+  const { userId } = req.params;
+  const { blocked, notes } = req.body || {};
+  const isBlocked = blocked !== false;
+  const { error } = await supabase.from("admin_policies").upsert({
+    user_id: userId, is_blocked: isBlocked, updated_by: req.user.id, updated_at: new Date().toISOString()
+  });
+  if (error) return res.status(500).json({ error: error.message });
+  await supabase.from("admin_audit_log").insert({ admin_id: req.user.id, target_user_id: userId, action: isBlocked ? "block" : "unblock", details: { notes: notes || null } });
+  res.json({ ok: true });
+});
+
+app.post("/api/admin/users/:userId/limits", requireAuth, requireAdmin, async (req, res) => {
+  const { userId } = req.params;
+  const { dailyLimit, monthlyLimit } = req.body || {};
+  const { error } = await supabase.from("admin_policies").upsert({
+    user_id: userId,
+    daily_api_limit: dailyLimit === undefined ? null : dailyLimit,
+    monthly_api_limit: monthlyLimit === undefined ? null : monthlyLimit,
+    updated_by: req.user.id,
+    updated_at: new Date().toISOString()
+  });
+  if (error) return res.status(500).json({ error: error.message });
+  await supabase.from("admin_audit_log").insert({ admin_id: req.user.id, target_user_id: userId, action: "update_limits", details: { dailyLimit, monthlyLimit } });
+  res.json({ ok: true });
+});
+
+app.post("/api/admin/users/:userId/devices/:deviceId/block", requireAuth, requireAdmin, async (req, res) => {
+  const { userId, deviceId } = req.params;
+  const blocked = (req.body || {}).blocked !== false;
+  const { error } = await supabase
+    .from("user_devices")
+    .update({ is_blocked: blocked })
+    .eq("device_id", deviceId)
+    .eq("user_id", userId);
+  if (error) return res.status(500).json({ error: error.message });
+  await supabase.from("admin_audit_log").insert({ admin_id: req.user.id, target_user_id: userId, action: blocked ? "block_device" : "unblock_device", details: { deviceId } });
+  res.json({ ok: true });
+});
+
+app.post("/api/admin/users/:userId/features", requireAuth, requireAdmin, async (req, res) => {
+  const { userId } = req.params;
+  const { features } = req.body || {};
+  const { error } = await supabase.from("admin_policies").upsert({
+    user_id: userId,
+    features: features || { search: true, listing: true, enrich: true },
+    updated_by: req.user.id,
+    updated_at: new Date().toISOString()
+  });
+  if (error) return res.status(500).json({ error: error.message });
+  await supabase.from("admin_audit_log").insert({ admin_id: req.user.id, target_user_id: userId, action: "update_features", details: { features } });
+  res.json({ ok: true });
+});
+
+app.get("/api/admin/usage", requireAuth, requireAdmin, async (req, res) => {
+  const page = Math.max(1, Number(req.query.page || 1));
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit || 50)));
+  const [{ data: logs, count }, { data: policies }] = await Promise.all([
+    supabase.from("usage_logs").select("*", { count: "exact" })
+      .order("created_at", { ascending: false }).range((page - 1) * limit, page * limit - 1),
+    supabase.from("admin_policies").select("*")
+  ]);
+  res.json({ logs: logs || [], total: count || 0, policies: policies || [], page, limit });
+});
+
+app.get("/api/admin/audit", requireAuth, requireAdmin, async (req, res) => {
+  const { data } = await supabase.from("admin_audit_log")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(100);
+  res.json({ entries: data || [] });
+});
+
+// Reset every user's daily counter (admin panel → Settings).
+app.post("/api/admin/reset-daily", requireAuth, requireAdmin, async (req, res) => {
+  const { error } = await supabase.rpc("reset_daily_counts");
+  if (error) {
+    // Fallback if the RPC is missing: update rows directly with service role.
+    const { error: updateError } = await supabase
+      .from("admin_policies")
+      .update({ daily_api_count: 0, updated_at: new Date().toISOString() })
+      .neq("user_id", "00000000-0000-0000-0000-000000000000");
+    if (updateError) return res.status(500).json({ error: updateError.message });
+  }
+  await supabase.from("admin_audit_log").insert({ admin_id: req.user.id, action: "reset_daily_counts", details: {} });
+  res.json({ ok: true });
+});
+
+// ── Health ──────────────────────────────────────────────
+app.get("/api/health", (_req, res) => {
+  res.json({ ok: true, auth: "supabase", timestamp: new Date().toISOString() });
+});
+
+// Unknown API routes → JSON 404 (never fall through to the static SPA).
+app.use("/api", (req, res) => {
+  res.status(404).json({ error: `Unknown endpoint: ${req.method} ${req.originalUrl}` });
+});
+
+// ── SPA fallback (local dev; Vercel serves web/ directly) ─
+app.get("*", (req, res) => {
+  const rel = req.path === "/" ? "index.html" : req.path.replace(/^\/+/, "");
+  const target = rel === "admin" || rel === "admin/" ? "admin.html" : rel;
+  const webRoot = path.join(projectRoot, "web");
+  const full = path.resolve(webRoot, target);
+  if (!full.startsWith(webRoot)) return res.status(404).send("Not found");
+  res.sendFile(full, (err) => {
+    if (err && !res.headersSent) res.status(404).send("Not found");
+  });
+});
+
+// ── Start (Vercel imports the app; it never calls listen) ─
+if (!process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`CJ Product Hunter (Cloud) running at http://localhost:${PORT}`);
+    console.log(`Admin panel: http://localhost:${PORT}/admin`);
+  });
+}
+
+export default app;

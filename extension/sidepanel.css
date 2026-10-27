@@ -135,3 +135,63 @@ body.panel{
 .qbadge{background:#fff1e2;color:#c85f00;border:1px solid #ffd9b0;font-weight:700}
 
 .panel .head .set-btn{margin-left:auto;background:#fff;border:1px solid #e4e4e4;color:#333333;padding:6px 9px;font-size:14px}.settings-body{display:flex;flex-direction:column;gap:10px}.settings-body h3{margin:0 34px 0 0}.settings-body .muted{color:#666666;font-size:12px;line-height:1.55;margin:0}.set-label{font-size:11px;font-weight:800;color:#657187}.set-row{display:flex;gap:8px}.set-row input{flex:1;min-width:0;padding:10px 11px;font-size:13px}.set-toggle,.set-remove{background:#fff;border:1px solid #e4e4e4;color:#333333}.set-save{background:#ff7700}.set-hint{margin:0;font-size:11px;line-height:1.55;color:#666666;background:#f7f9fc;border:1px solid #e4e9f2;border-radius:9px;padding:9px 10px}.set-hint code{background:#eef1f6;padding:1px 4px;border-radius:5px}.set-meta{font-size:11px;background:#f2f2f2;color:#333333;border-radius:8px;padding:8px 10px}.set-meta.is-warn{background:#fff4e8;color:#8a4b00}.set-status{font-size:11px;color:#007f60;min-height:14px}.set-status.is-error{color:#f24724}
+
+
+/* -- Account / sign-in (shared by popup + side panel) ------------- */
+.hidden{display:none!important}
+
+#authOverlay{
+  position:fixed;inset:0;background:#fff;z-index:100;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px
+}
+#authOverlay[hidden]{display:none}
+.auth-card{width:100%;max-width:340px}
+.auth-card .logo{width:44px;height:44px;border-radius:12px;background:#ff7700;color:#fff;display:grid;place-items:center;font-weight:800;font-size:15px;margin:0 auto 12px}
+.auth-card h2{margin:0 0 4px;font-size:18px;text-align:center}
+.auth-card .sub{color:#666666;font-size:13px;margin:0 0 16px;text-align:center;line-height:1.5}
+.auth-card label{display:block;font-size:12px;font-weight:700;color:#666666;margin-bottom:5px}
+.auth-card input{
+  width:100%;padding:11px 12px;border:1px solid #d3d3d3;border-radius:9px;
+  font:inherit;font-size:13px;margin-bottom:11px
+}
+.auth-card input:focus{outline:2px solid #ffd7b0;border-color:#ff7700}
+.auth-card .btn-full{
+  width:100%;padding:12px;border-radius:9px;border:0;background:#ff7700;
+  color:#fff;font-weight:700;font-size:14px;cursor:pointer
+}
+.auth-card .btn-full:disabled{opacity:.5;cursor:not-allowed}
+.auth-card .switch{text-align:center;font-size:13px;color:#666666;margin:14px 0 0}
+.auth-card .switch button{
+  background:none;border:0;padding:0;color:#ff7700;font:inherit;font-weight:700;
+  cursor:pointer;text-decoration:underline
+}
+.auth-msg{min-height:16px;font-size:12px;line-height:1.45;margin:0 0 9px;color:#dc2626}
+.auth-msg.ok{color:#16a34a}
+.auth-hint{margin-top:14px;padding:10px 11px;border:1px dashed #e4e4e4;border-radius:9px;
+  font-size:11.5px;color:#666666;line-height:1.55;background:#fafafa}
+
+/* top bar */
+.user-bar{display:flex;align-items:center;gap:6px;margin-left:auto}
+.user-bar .email{
+  font-size:11px;color:#666666;max-width:120px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap
+}
+button.btn-sm{
+  padding:5px 9px;font-size:11px;background:#fff;border:1px solid #e4e4e4;
+  color:#333333;border-radius:8px;cursor:pointer;font-weight:700
+}
+button.btn-sm:hover{background:#f5f5f5}
+
+/* blocked banner */
+.blocked-msg{
+  background:#fef2f2;border:1px solid #fecaca;color:#dc2626;
+  padding:11px 12px;border-radius:9px;font-size:12.5px;line-height:1.5;margin-bottom:11px
+}
+
+/* CJ API key row inside the settings modal */
+.set-row{display:flex;gap:8px;margin-top:10px}
+.set-row input{flex:1;min-width:0;padding:10px 11px;font-size:13px;
+  border:1px solid #d3d3d3;border-radius:8px;font:inherit}
+.key-meta{font-weight:700}
+.key-meta.is-warn{color:#b07c1a}
+.key-meta.is-ok{color:#007f60}

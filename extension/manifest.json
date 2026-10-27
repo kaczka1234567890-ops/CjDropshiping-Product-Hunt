@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "CJ Product Hunter",
   "version": "1.0.0",
-  "description": "Hunt CJ winning products: search, score, sales, reviews, supplier info, ship quotes. Runs on your own local backend.",
+  "description": "Hunt CJdropshipping winning products: search, score, sales, reviews, supplier info and one-click listing.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -24,5 +24,8 @@
   },
   "minimum_chrome_version": "116",
   "permissions": ["storage", "sidePanel"],
-  "host_permissions": ["http://localhost:3000/*"]
+  "host_permissions": [
+    "http://localhost:3000/*",
+    "https://YOUR-PROJECT.vercel.app/*"
+  ]
 }

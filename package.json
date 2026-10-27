@@ -1,15 +1,17 @@
 {
-  "name": "cj-winning-product-hunter-poc",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Local-first CJdropshipping product research POC",
+  "name": "cj-winning-product-hunter",
+  "version": "1.0.0",
+  "private": false,
+  "description": "CJdropshipping Winning Product Hunter — Cloud Edition",
   "type": "module",
   "scripts": {
     "start": "node server/index.js",
-    "dev": "node --watch server/index.js"
+    "dev": "node --watch server/index.js",
+    "set-url": "node scripts/set-backend-url.mjs"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "@supabase/supabase-js": "^2.45.0"
   }
 }

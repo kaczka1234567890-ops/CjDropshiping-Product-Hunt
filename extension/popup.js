@@ -1,4 +1,18 @@
-const API_BASE = "http://localhost:3000";
+/* ── Backend + account session ─────────────────────────────────────
+   DEFAULT_API_BASE must point at your deployed backend before you
+   publish (your Vercel URL, e.g. https://cj-product-hunter.vercel.app).
+   While testing locally it stays http://localhost:3000 — a one-off
+   override without editing this file:
+     chrome.storage.local.set({ apiBase: "https://your-app.vercel.app" })
+*/
+const DEFAULT_API_BASE = "http://localhost:3000";
+let API_BASE = DEFAULT_API_BASE;
+
+const TOKEN_STORAGE_KEY = "cjToken";
+let token = "";
+let session = null;
+let authMode = "signin";
+
 const statusEl = document.querySelector("#status");
 const messageEl = document.querySelector("#message");
 const resultsEl = document.querySelector("#results");
@@ -12,11 +26,218 @@ const modal = document.querySelector("#detailModal");
 const modalBody = document.querySelector("#modalBody");
 const modalClose = document.querySelector("#modalClose");
 
+const authOverlay = document.querySelector("#authOverlay");
+const appEl = document.querySelector("#app");
+const authMsg = document.querySelector("#authMsg");
+const authBtn = document.querySelector("#authBtn");
+const toggleAuthBtn = document.querySelector("#toggleAuth");
+const authSwitchText = document.querySelector("#authSwitchText");
+const nameWrap = document.querySelector("#nameWrap");
+const blockedMsgEl = document.querySelector("#blockedMsg");
+const userEmailEl = document.querySelector("#userEmail");
+const logoutBtn = document.querySelector("#logoutBtn");
+
+// Every backend call goes through api(): it injects the session token and
+// sends the user back to the sign-in screen when the session dies.
+async function api(path, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  if (res.status === 401) {
+    await forgetSession();
+    showAuth("Your session expired. Please sign in again.");
+    throw new Error("Session expired — please sign in again.");
+  }
+  return res;
+}
+
 let enrichMap = {};
 let pendingEnrich = new Set();
 let shownProducts = [];
 let bestSellingMode = false;
 let searchGen = 0;
+
+// ── Account / sign-in UI ────────────────────────────────────────
+function setAuthMessage(text, ok) {
+  if (!authMsg) return;
+  authMsg.textContent = text || "";
+  authMsg.className = "auth-msg" + (ok ? " ok" : "");
+}
+
+function setAuthMode(next) {
+  authMode = next;
+  const signingUp = authMode === "signup";
+  if (authBtn) authBtn.textContent = signingUp ? "Create account" : "Sign in";
+  if (authSwitchText) authSwitchText.textContent = signingUp ? "Already have an account?" : "Don't have an account?";
+  if (toggleAuthBtn) toggleAuthBtn.textContent = signingUp ? "Sign in" : "Sign up";
+  if (nameWrap) nameWrap.hidden = !signingUp;
+  const pwd = document.querySelector("#authPassword");
+  if (pwd) pwd.autocomplete = signingUp ? "new-password" : "current-password";
+  setAuthMessage("");
+}
+
+function showAuth(message) {
+  if (authOverlay) authOverlay.hidden = false;
+  if (appEl) appEl.classList.add("hidden");
+  if (resultsEl) resultsEl.innerHTML = "";
+  if (message) setAuthMessage(message, false);
+}
+
+function hideAuth() {
+  if (authOverlay) authOverlay.hidden = true;
+  if (appEl) appEl.classList.remove("hidden");
+}
+
+async function forgetSession() {
+  token = "";
+  session = null;
+  try {
+    await chrome.storage.local.remove([TOKEN_STORAGE_KEY]);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+async function saveSession(value) {
+  token = value;
+  try {
+    await chrome.storage.local.set({ [TOKEN_STORAGE_KEY]: value });
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+async function fetchMe() {
+  try {
+    const res = await api("/auth/me");
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+function applyAccessState(me) {
+  const blocked = Boolean(me.isBlocked);
+  const features = me.features || {};
+  const canSearch = !blocked && features.search !== false;
+  if (blockedMsgEl) {
+    blockedMsgEl.classList.toggle("hidden", !blocked);
+    blockedMsgEl.textContent = blocked
+      ? "🚫 Your account has been suspended. Contact support to restore access."
+      : "";
+  }
+  [searchButton, trendingButton, bestSellingButton].forEach((el) => {
+    if (el) el.disabled = !canSearch;
+  });
+  if (me.dailyLimit && me.dailyUsed >= me.dailyLimit) {
+    setStatus("Daily API limit reached", "warn");
+    setMessage(`Daily limit reached (${me.dailyUsed}/${me.dailyLimit}). It resets at 00:00 UTC.`, true);
+  }
+}
+
+function usageSummary() {
+  if (!session) return "";
+  const bits = [];
+  if (session.dailyLimit) bits.push(`today ${session.dailyUsed}/${session.dailyLimit}`);
+  if (session.monthlyLimit) bits.push(`month ${session.monthlyUsed}/${session.monthlyLimit}`);
+  return bits.length ? ` · ${bits.join(" · ")}` : "";
+}
+
+function enterApp(me) {
+  session = me;
+  hideAuth();
+  if (userEmailEl) {
+    userEmailEl.textContent = me.email || "";
+    userEmailEl.title = `${me.email || ""}\nUser: ${me.id || ""}`;
+  }
+  applyAccessState(me);
+  if (me.isBlocked) return;
+  if (me.hasCjKey) {
+    setStatus(`Ready · CJ key connected${usageSummary()}`, "ok");
+    const stored = chrome.storage.local.get(["lastQuery"]);
+    Promise.resolve(stored).then((data) => {
+      if (data && data.lastQuery && queryInput && !queryInput.value) queryInput.value = data.lastQuery;
+    });
+  } else {
+    setStatus("Add your CJ API key", "warn");
+    setMessage("One-time setup: paste your CJdropshipping API key below.", false);
+    openSettings();
+  }
+}
+
+async function submitAuth() {
+  const emailInput = document.querySelector("#authEmail");
+  const passwordInput = document.querySelector("#authPassword");
+  const email = emailInput ? emailInput.value.trim() : "";
+  const password = passwordInput ? passwordInput.value : "";
+  if (!email || !password) { setAuthMessage("Enter your email and password."); return; }
+  if (authMode === "signup" && password.length < 8) {
+    setAuthMessage("Password must be at least 8 characters.");
+    return;
+  }
+
+  if (authBtn) authBtn.disabled = true;
+  setAuthMessage(authMode === "signup" ? "Creating your account…" : "Signing in…");
+  try {
+    const nameInput = document.querySelector("#authName");
+    const res = await fetch(`${API_BASE}/api/auth/${authMode === "signup" ? "signup" : "login"}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email,
+        password,
+        fullName: nameInput && !nameWrap?.hidden ? nameInput.value.trim() : undefined
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Could not sign in.");
+
+    if (authMode === "signup" && !data.token) {
+      setAuthMessage("Account created ✓ — confirm your email, then sign in.", true);
+      setAuthMode("signin");
+      return;
+    }
+
+    await saveSession(data.token);
+    const me = await fetchMe();
+    if (!me) throw new Error("Signed in, but the account could not be loaded. Try again.");
+    enterApp(me);
+  } catch (error) {
+    setAuthMessage(error.message || "Could not sign in.");
+  } finally {
+    if (authBtn) authBtn.disabled = false;
+  }
+}
+
+if (authBtn) authBtn.addEventListener("click", submitAuth);
+if (toggleAuthBtn) {
+  toggleAuthBtn.addEventListener("click", () => {
+    setAuthMode(authMode === "signin" ? "signup" : "signin");
+  });
+}
+if (authOverlay) {
+  authOverlay.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      submitAuth();
+    }
+  });
+}
+if (logoutBtn) {
+  logoutBtn.addEventListener("click", async () => {
+    try {
+      await api("/auth/logout", { method: "POST" });
+    } catch {
+      /* token already dead */
+    }
+    await forgetSession();
+    showAuth();
+    setStatus("Signed out", "warn");
+    setMessage("", false);
+  });
+}
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, ch => ({
@@ -365,7 +586,7 @@ async function openDetail(id) {
   modal.hidden = false;
   modalBody.innerHTML = "<p class='message'>Loading product & supplier info…</p>";
   try {
-    const res = await fetch(`${API_BASE}/api/products/${encodeURIComponent(id)}`);
+    const res = await api(`/api/products/${encodeURIComponent(id)}`);
     const data = await res.json();
     if (!res.ok) throw new Error([data.error, data.detail].filter(Boolean).join(" "));
     modalBody.innerHTML = detailHtml(data.product, data.reviews, data.metrics, data.sales, data.supplier);
@@ -425,11 +646,15 @@ function closeListing() {
 
 async function openListing(pid, fallbackTitle) {
   if (!listingModal || !pid) return;
+  if (session && session.features && session.features.listing === false) {
+    setMessage("Listing is turned off for your account. Contact support.", true);
+    return;
+  }
   listingModal.hidden = false;
   listingBody.innerHTML = "<p class='message'>Loading variant pricing from CJ…</p>";
   listing = null;
   try {
-    const res = await fetch(`${API_BASE}/api/listing/preview?pid=${encodeURIComponent(pid)}&country=US`);
+    const res = await api(`/api/listing/preview?pid=${encodeURIComponent(pid)}&country=US`);
     const data = await res.json();
     if (!res.ok) throw new Error([data.error, data.detail].filter(Boolean).join(" ") || "Preview failed.");
     listing = {
@@ -719,7 +944,7 @@ async function reloadListing(country, from = listing.from) {
   const selected = rows.filter((r) => r.selected).map((r) => String(r.vid));
   const title = listing.title;
   try {
-    const res = await fetch(`${API_BASE}/api/listing/preview?pid=${encodeURIComponent(pid)}&country=${encodeURIComponent(country)}&from=${encodeURIComponent(from)}&margin=${encodeURIComponent(listing.margin)}`);
+    const res = await api(`/api/listing/preview?pid=${encodeURIComponent(pid)}&country=${encodeURIComponent(country)}&from=${encodeURIComponent(from)}&margin=${encodeURIComponent(listing.margin)}`);
     const data = await res.json();
     if (!res.ok) throw new Error([data.error, data.detail].filter(Boolean).join(" ") || "Preview failed.");
     listing = {
@@ -788,7 +1013,7 @@ async function publishListing() {
   setListingStatus(`Listing ${selectedRows.length} variant(s) to ${listing.store?.name || "CJ store"}…`);
 
   try {
-    const res = await fetch(`${API_BASE}/api/listing/publish`, {
+    const res = await api("/api/listing/publish", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -897,7 +1122,7 @@ async function enrichShown(gen, isBestSelling, products, { filterFirst = false }
   for (let i = 0; i < ids.length; i += 3) {
     const chunk = ids.slice(i, i + 3);
     try {
-      const res = await fetch(`${API_BASE}/api/enrich?ids=${chunk.map(encodeURIComponent).join(",")}`);
+      const res = await api(`/api/enrich?ids=${chunk.map(encodeURIComponent).join(",")}`);
       const data = await res.json();
       if (res.ok && data.items) Object.assign(enrichMap, data.items);
     } catch {
@@ -937,7 +1162,7 @@ async function runSearch({ trending = false, bestSelling = false } = {}) {
   try {
     const useTrending = trending || (bestSelling && !queryInput.value.trim());
     const params = buildParams(useTrending ? { trending: "1", q: "" } : {});
-    const res = await fetch(`${API_BASE}/api/products?${params}`);
+    const res = await api(`/api/products?${params}`);
     const data = await res.json();
     if (!res.ok) throw new Error([data.error, data.detail].filter(Boolean).join(" "));
     const products = data.products || [];
@@ -970,10 +1195,14 @@ async function runSearch({ trending = false, bestSelling = false } = {}) {
   } catch (err) {
     const text = err.message || "Request failed.";
     if (/Failed to fetch|NetworkError|load failed/i.test(text)) {
-      setStatus("Backend not reachable", "error");
-      setMessage("Local backend is not running. Open the project folder and run: npm start", true);
+      setStatus("Server not reachable", "error");
+      setMessage("Could not reach the CJ Product Hunter server. Check your internet connection and try again.", true);
+    } else if (/API key not configured/i.test(text)) {
+      setStatus("CJ API key needed", "warn");
+      setMessage("Paste your CJdropshipping API key (⚙ Key) to start hunting.", true);
+      openSettings();
     } else {
-      setStatus("Backend ready · CJ error", "error");
+      setStatus("Search failed", "error");
       setMessage(text, true);
     }
   } finally {
@@ -1035,24 +1264,41 @@ if (openWindowButton) {
 }
 
 async function init() {
+  setStatus("Checking your account…", "warn");
+
+  // Optional one-off backend override (useful before the URL is baked in).
   try {
-    const data = await (await fetch(`${API_BASE}/api/health`)).json();
-    setStatus(
-      data.cjConfigured
-        ? "Backend ready · CJ data loaded"
-        : "Backend up · add CJ API Key (⚙ Settings)",
-      data.cjConfigured ? "ok" : "warn"
-    );
+    const { apiBase } = await chrome.storage.local.get(["apiBase"]);
+    if (apiBase) API_BASE = String(apiBase).replace(/\/+$/, "");
   } catch {
-    setStatus("Backend not reachable", "error");
-    setMessage("Start the backend with npm start, then search here.", true);
+    /* storage unavailable */
   }
-  const stored = await chrome.storage.local.get(["lastQuery"]);
-  if (stored.lastQuery) queryInput.value = stored.lastQuery;
+
+  let saved = {};
+  try {
+    saved = await chrome.storage.local.get([TOKEN_STORAGE_KEY, "lastQuery"]);
+  } catch {
+    saved = {};
+  }
+  token = saved[TOKEN_STORAGE_KEY] || "";
+  if (saved.lastQuery && queryInput && !queryInput.value) queryInput.value = saved.lastQuery;
+
+  if (!token) {
+    showAuth();
+    return;
+  }
+
+  const me = await fetchMe();
+  if (me) {
+    enterApp(me);
+  } else {
+    showAuth();
+  }
 }
 
 init();
 
+// ── CJ API key (one-time setup per account) ──────────────────────
 const settingsModal = document.querySelector("#settingsModal");
 const settingsBtn = document.querySelector("#settingsBtn");
 const cjKeyInput = document.querySelector("#cjKeyInput");
@@ -1066,39 +1312,40 @@ const settingsCloseBtn = document.querySelector("#settingsClose");
 function setSettingsStatus(text, isError) {
   if (!cjKeyStatus) return;
   cjKeyStatus.textContent = text || "";
+  cjKeyStatus.classList.toggle("error", Boolean(isError));
   cjKeyStatus.classList.toggle("is-error", Boolean(isError));
 }
 
-async function refreshStatusFromHealth() {
+function markKeyMeta(text, state) {
+  if (!cjKeyMeta) return;
+  cjKeyMeta.textContent = text;
+  cjKeyMeta.classList.remove("is-warn", "is-ok");
+  if (state) cjKeyMeta.classList.add(state);
+}
+
+async function refreshStatus() {
+  if (!statusEl) return;
+  if (session && session.isBlocked) return;
   try {
-    const data = await (await fetch(`${API_BASE}/api/health`)).json();
-    setStatus(
-      data.cjConfigured
-        ? "Backend ready · CJ data loaded"
-        : "Backend up · add CJ API Key (⚙ Settings)",
-      data.cjConfigured ? "ok" : "warn"
-    );
+    const res = await api("/api/keys");
+    const data = await res.json().catch(() => ({}));
+    if (data.exists) setStatus(`Ready · CJ key connected${usageSummary()}`, "ok");
+    else setStatus("Add your CJ API key", "warn");
   } catch {
-    setStatus("Backend not reachable", "error");
+    setStatus("Server not reachable", "error");
   }
 }
 
 async function loadSettingsMeta() {
   if (!cjKeyMeta) return;
   try {
-    const data = await (await fetch(`${API_BASE}/api/settings`)).json();
-    cjKeyMeta.classList.remove("is-warn");
-    if (!data.cjKeySet) {
-      cjKeyMeta.classList.add("is-warn");
-      cjKeyMeta.textContent = "No API key yet — paste your CJdropshipping API Key below.";
-    } else {
-      cjKeyMeta.textContent = data.cjKeySource === "settings"
-        ? `Using saved key (Settings): ${data.cjKeyMasked}`
-        : `Using key from .env: ${data.cjKeyMasked}`;
-    }
+    const res = await api("/api/keys");
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Could not read the saved key.");
+    if (data.exists) markKeyMeta(`Saved ✓ · key ${data.fingerprint}…`, "is-ok");
+    else markKeyMeta("No API key yet — paste your CJdropshipping API Key below.", "is-warn");
   } catch {
-    cjKeyMeta.classList.add("is-warn");
-    cjKeyMeta.textContent = "Could not reach the local backend to read settings.";
+    markKeyMeta("Could not reach the server to read your key.", "is-warn");
   }
 }
 
@@ -1113,44 +1360,59 @@ function openSettings() {
 
 if (settingsBtn) settingsBtn.addEventListener("click", openSettings);
 if (settingsCloseBtn) settingsCloseBtn.addEventListener("click", () => { settingsModal.hidden = true; });
-if (settingsModal) settingsModal.addEventListener("click", (event) => { if (event.target === settingsModal) settingsModal.hidden = true; });
+if (settingsModal) {
+  settingsModal.addEventListener("click", (event) => {
+    if (event.target === settingsModal) settingsModal.hidden = true;
+  });
+}
 
-if (cjKeyToggleBtn) cjKeyToggleBtn.addEventListener("click", () => {
-  const showing = cjKeyInput.type === "text";
-  cjKeyInput.type = showing ? "password" : "text";
-  cjKeyToggleBtn.textContent = showing ? "Show" : "Hide";
-});
+if (cjKeyToggleBtn) {
+  cjKeyToggleBtn.addEventListener("click", () => {
+    const showing = cjKeyInput.type === "text";
+    cjKeyInput.type = showing ? "password" : "text";
+    cjKeyToggleBtn.textContent = showing ? "Show" : "Hide";
+  });
+}
 
 async function postCjKey(apiKey, busyLabel, okLabel) {
-  cjKeySaveBtn.disabled = true;
-  cjKeyRemoveBtn.disabled = true;
+  if (cjKeySaveBtn) cjKeySaveBtn.disabled = true;
+  if (cjKeyRemoveBtn) cjKeyRemoveBtn.disabled = true;
   setSettingsStatus(busyLabel);
   try {
-    const res = await fetch(`${API_BASE}/api/settings/cj-key`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ apiKey })
-    });
+    const res = apiKey
+      ? await api("/api/keys", { method: "POST", body: JSON.stringify({ apiKey }) })
+      : await api("/api/keys", { method: "DELETE" });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || "Could not save the API Key.");
+    if (!res.ok) throw new Error(data.error || "Could not save the API key.");
     if (cjKeyInput) cjKeyInput.value = "";
-    setSettingsStatus(`${okLabel} ${data.cjKeySet ? `Key: ${data.cjKeyMasked} (${data.cjKeySource}).` : "Falling back to .env."}`);
+    if (session) session.hasCjKey = Boolean(apiKey);
+    setSettingsStatus(
+      apiKey
+        ? `${okLabel} — key ${data.fingerprint}… stored encrypted on the server.`
+        : okLabel
+    );
     await loadSettingsMeta();
-    refreshStatusFromHealth();
+    refreshStatus();
+    if (apiKey) setMessage("", false);
   } catch (error) {
     setSettingsStatus(error.message || "Request failed.", true);
   } finally {
-    cjKeySaveBtn.disabled = false;
-    cjKeyRemoveBtn.disabled = false;
+    if (cjKeySaveBtn) cjKeySaveBtn.disabled = false;
+    if (cjKeyRemoveBtn) cjKeyRemoveBtn.disabled = false;
   }
 }
 
-if (cjKeySaveBtn) cjKeySaveBtn.addEventListener("click", () => {
-  const apiKey = cjKeyInput.value.trim();
-  if (!apiKey) { setSettingsStatus("Paste your CJdropshipping API Key first.", true); return; }
-  postCjKey(apiKey, "Validating the key with CJ…", "Saved ✓");
-});
+if (cjKeySaveBtn) {
+  cjKeySaveBtn.addEventListener("click", () => {
+    const apiKey = cjKeyInput.value.trim();
+    if (!apiKey) { setSettingsStatus("Paste your CJdropshipping API Key first.", true); return; }
+    postCjKey(apiKey, "Validating the key with CJ…", "Saved ✓");
+  });
+}
 
-if (cjKeyRemoveBtn) cjKeyRemoveBtn.addEventListener("click", () => {
-  postCjKey("", "Removing the saved key…", "Saved key removed ✓");
-});
+if (cjKeyRemoveBtn) {
+  cjKeyRemoveBtn.addEventListener("click", () => {
+    if (!confirm("Remove your saved CJ API key? You will need to paste it again.")) return;
+    postCjKey("", "Removing the saved key…", "Saved key removed ✓");
+  });
+}

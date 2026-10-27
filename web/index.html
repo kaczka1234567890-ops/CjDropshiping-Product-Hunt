@@ -3,179 +3,272 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CJ Product Hunter — Local POC</title>
-  <link rel="stylesheet" href="/styles.css">
+  <title>Sign in — CJ Product Hunter</title>
+  <style>
+    :root {
+      --primary: #ff7700;
+      --primary-dark: #e06000;
+      --danger: #dc2626;
+      --success: #16a34a;
+      --border: #e4e4e4;
+      --text: #2b2b2b;
+      --muted: #6b6b6b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+      color: var(--text);
+      background: radial-gradient(1200px 600px at 20% -10%, #fff3e6 0%, #f6f6f7 55%, #f0f0f2 100%);
+    }
+    .card {
+      width: 100%;
+      max-width: 400px;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px 28px;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, .08);
+    }
+    .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
+    .mark {
+      width: 42px; height: 42px; border-radius: 11px;
+      background: var(--primary); color: #fff;
+      display: grid; place-items: center; font-weight: 800; font-size: 15px;
+    }
+    .brand h1 { margin: 0; font-size: 19px; }
+    .brand p { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); }
+    h2 { margin: 0 0 4px; font-size: 17px; }
+    .sub { margin: 0 0 18px; font-size: 13.5px; color: var(--muted); line-height: 1.5; }
+    label { display: block; font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+    input {
+      width: 100%; padding: 11px 13px; margin-bottom: 14px;
+      border: 1px solid var(--border); border-radius: 9px;
+      font: inherit; font-size: 14px; background: #fff;
+    }
+    input:focus { outline: 2px solid #ffd7b0; border-color: var(--primary); }
+    button.primary {
+      width: 100%; padding: 12px; border: none; border-radius: 9px;
+      background: var(--primary); color: #fff; font: inherit; font-size: 14.5px;
+      font-weight: 700; cursor: pointer;
+    }
+    button.primary:hover { background: var(--primary-dark); }
+    button.primary:disabled { opacity: .55; cursor: not-allowed; }
+    .switch { margin: 16px 0 0; text-align: center; font-size: 13.5px; color: var(--muted); }
+    .switch button {
+      background: none; border: none; padding: 0; font: inherit; font-weight: 700;
+      color: var(--primary); cursor: pointer; text-decoration: underline;
+    }
+    .msg { min-height: 18px; margin: 0 0 10px; font-size: 13px; line-height: 1.45; }
+    .msg.error { color: var(--danger); }
+    .msg.ok { color: var(--success); }
+    .hint {
+      margin-top: 18px; padding: 11px 12px; border: 1px dashed var(--border);
+      border-radius: 9px; font-size: 12.5px; color: var(--muted); line-height: 1.55;
+      background: #fafafa;
+    }
+    .hint code { font-size: 12px; background: #f0f0f0; padding: 1px 5px; border-radius: 4px; }
+    .done { text-align: center; }
+    .done .big { font-size: 40px; margin-bottom: 6px; }
+    a.btn {
+      display: inline-block; margin-top: 14px; padding: 11px 20px; border-radius: 9px;
+      background: var(--primary); color: #fff; text-decoration: none; font-weight: 700; font-size: 14px;
+    }
+    a.btn.secondary { background: #fff; color: var(--text); border: 1px solid var(--border); }
+  </style>
 </head>
 <body>
-  <header class="topbar">
-    <div class="brandmark">PH</div>
-    <div><div class="brand">Product Hunter</div><div class="subbrand">CJdropshipping · Local POC</div></div>
-    <div class="status" id="status">Checking backend…</div>
-    <button type="button" id="settingsBtn" class="settings-btn" title="Settings — CJ API Key">⚙ Settings</button>
-  </header>
-  <main class="container">
-    <section class="hero">
-      <p class="eyebrow">PRODUCT RESEARCH WORKSPACE</p>
-      <h1>Find products worth testing.</h1>
-      <p class="muted">Search CJ products, inspect available data, and estimate profitability. Trend and competition data are not connected in this first POC.</p>
-      <form id="searchForm" class="searchbar">
-        <input id="query" placeholder="Search product name, e.g. desk lamp" aria-label="Product search">
-        <button type="submit" id="searchButton">Search products</button>
-        <button type="button" id="trendingButton" class="button-secondary">🔥 Trending</button>
-        <button type="button" id="bestSellingButton" class="button-secondary">🛒 Best-Selling</button>
-      </form>
-      <details class="filters dash-filters">
-        <summary>Filters — price, stock, shipping, country</summary>
-        <div class="fgrid">
-          <label>Min price ($)<input type="number" id="fMinPrice" min="0" step="0.01" placeholder="e.g. 8"></label>
-          <label>Max price ($)<input type="number" id="fMaxPrice" min="0" step="0.01" placeholder="e.g. 60"></label>
-          <label>Min stock<input type="number" id="fMinStock" min="0" step="1" placeholder="e.g. 100"></label>
-          <label>Ship From:
-            <select id="fCountry">
-              <option value="">Any warehouse</option>
-              <option value="CN">China (CN)</option>
-              <option value="US">United States (US)</option>
-              <option value="TH">Thailand (TH)</option>
-              <option value="GB">United Kingdom (GB)</option>
-              <option value="DE">Germany (DE)</option>
-              <option value="FR">France (FR)</option>
-              <option value="ES">Spain (ES)</option>
-              <option value="IT">Italy (IT)</option>
-              <option value="NL">Netherlands (NL)</option>
-              <option value="CA">Canada (CA)</option>
-              <option value="AU">Australia (AU)</option>
-              <option value="JP">Japan (JP)</option>
-              <option value="KR">South Korea (KR)</option>
-              <option value="SG">Singapore (SG)</option>
-              <option value="MY">Malaysia (MY)</option>
-              <option value="VN">Vietnam (VN)</option>
-              <option value="HK">Hong Kong (HK)</option>
-              <option value="TW">Taiwan (TW)</option>
-            </select>
-          </label>
-          <label>Deliver to:
-            <select id="fDeliverTo">
-              <option value="US" selected>United States (US)</option>
-              <option value="GB">United Kingdom (GB)</option>
-              <option value="CA">Canada (CA)</option>
-              <option value="AU">Australia (AU)</option>
-              <option value="DE">Germany (DE)</option>
-              <option value="FR">France (FR)</option>
-              <option value="ES">Spain (ES)</option>
-              <option value="IT">Italy (IT)</option>
-              <option value="NL">Netherlands (NL)</option>
-              <option value="BE">Belgium (BE)</option>
-              <option value="SE">Sweden (SE)</option>
-              <option value="NO">Norway (NO)</option>
-              <option value="DK">Denmark (DK)</option>
-              <option value="FI">Finland (FI)</option>
-              <option value="PL">Poland (PL)</option>
-              <option value="AT">Austria (AT)</option>
-              <option value="CH">Switzerland (CH)</option>
-              <option value="IE">Ireland (IE)</option>
-              <option value="PT">Portugal (PT)</option>
-              <option value="CZ">Czechia (CZ)</option>
-              <option value="GR">Greece (GR)</option>
-              <option value="RO">Romania (RO)</option>
-              <option value="HU">Hungary (HU)</option>
-              <option value="MX">Mexico (MX)</option>
-              <option value="BR">Brazil (BR)</option>
-              <option value="CL">Chile (CL)</option>
-              <option value="JP">Japan (JP)</option>
-              <option value="KR">South Korea (KR)</option>
-              <option value="SG">Singapore (SG)</option>
-              <option value="MY">Malaysia (MY)</option>
-              <option value="TH">Thailand (TH)</option>
-              <option value="PH">Philippines (PH)</option>
-              <option value="ID">Indonesia (ID)</option>
-              <option value="VN">Vietnam (VN)</option>
-              <option value="NZ">New Zealand (NZ)</option>
-              <option value="AE">United Arab Emirates (AE)</option>
-              <option value="SA">Saudi Arabia (SA)</option>
-              <option value="IN">India (IN)</option>
-              <option value="IL">Israel (IL)</option>
-              <option value="TR">Turkey (TR)</option>
-              <option value="ZA">South Africa (ZA)</option>
-            </select>
-          </label>
-          <label class="check"><input type="checkbox" id="fFreeShip"> Free shipping only</label>
-          <label class="check"><input type="checkbox" id="fQuickDelivery"> 🚀 Quick delivery (stock in deliver-to warehouse)</label>
-          <label class="check"><input type="checkbox" id="fNewListing"> 🆕 New listing (≤ 7 days)</label>
-          <label class="check"><input type="checkbox" id="fNewProduct"> ✨ New product (≤ 30 days)</label>
-          <label class="check"><input type="checkbox" id="fRelisting"> ♻ Re-listing (old → active)</label>
-          <label class="check"><input type="checkbox" id="fNeverListed"> 🚫 Never listed (0 sellers)</label>
-          <label class="check"><button type="button" id="resetFilters" class="button-secondary">↺ Reset filters</button></label>
-        </div>
-      </details>
-    </section>
-
-    <section class="notice">
-      <strong>POC score, not a sales prediction.</strong>
-      <span>The score currently reflects recognized product data only. It does not prove demand, sales, or low competition.</span>
-    </section>
-
-    <section class="section-head">
-      <div><h2>Product results</h2><p class="muted" id="resultCount">Search to load results from CJ.</p></div>
-      <div class="head-actions">
-        <button class="button-secondary" id="exportButton" disabled>Export CSV</button>
+  <main class="card">
+    <div class="brand">
+      <div class="mark">PH</div>
+      <div>
+        <h1>CJ Product Hunter</h1>
+        <p>CJdropshipping winning-product research</p>
       </div>
-    </section>
-    <div class="pager" id="pager">
-      <button class="button-secondary" id="prevPage" disabled>← Prev</button>
-      <span id="pageInfo">Page 1</span>
-      <button class="button-secondary" id="nextPage" disabled>Next →</button>
     </div>
-    <div id="message" class="message" role="status">Start by searching for a product.</div>
-    <section id="results" class="product-grid"></section>
 
-    <section class="calculator">
-      <div><p class="eyebrow">QUICK CALCULATOR</p><h2>Estimate net profit</h2><p class="muted">Use your target selling price and all expected costs.</p></div>
-      <form id="profitForm" class="calc-grid">
-        <label>Selling price ($)<input type="number" min="0" step="0.01" value="29.99" name="sellingPrice" required></label>
-        <label>Product cost ($)<input type="number" min="0" step="0.01" value="6" name="productCost" required></label>
-        <label>Shipping ($)<input type="number" min="0" step="0.01" value="4" name="shippingCost" required></label>
-        <label>Ad cost per sale ($)<input type="number" min="0" step="0.01" value="8" name="adCost" required></label>
-        <label>Platform/payment fees ($)<input type="number" min="0" step="0.01" value="2" name="fees" required></label>
-        <label>Other costs ($)<input type="number" min="0" step="0.01" value="1" name="otherCosts" required></label>
-        <button type="submit">Calculate profit</button>
-      </form>
-      <div class="profit-result" id="profitResult">Estimated net profit: <strong>$8.99</strong> <span>(29.99 − 6 − 4 − 8 − 2 − 1)</span></div>
-    </section>
-    <footer>Local-only POC · Add your CJ API Key in Settings (⚙), or keep it in the server-side .env file.</footer>
+    <!-- Sign in / sign up -->
+    <form id="authForm" novalidate>
+      <h2 id="formTitle">Sign in</h2>
+      <p class="sub" id="formSub">Access the admin panel or manage your account.</p>
+      <div class="msg" id="authMsg" role="status"></div>
+
+      <div id="nameWrap" hidden>
+        <label for="fullName">Full name (optional)</label>
+        <input id="fullName" type="text" autocomplete="name" placeholder="Your name">
+      </div>
+
+      <label for="email">Email</label>
+      <input id="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password" placeholder="••••••••" required>
+
+      <button class="primary" id="submitBtn" type="submit">Sign in</button>
+
+      <p class="switch">
+        <span id="switchText">Don't have an account?</span>
+        <button type="button" id="switchBtn">Sign up</button>
+      </p>
+    </form>
+
+    <!-- Signed in: non-admin -->
+    <div id="memberView" class="done" hidden>
+      <div class="big">🎉</div>
+      <h2>You're signed in</h2>
+      <p class="sub">This website is only for administrators. To hunt products, open the
+        <strong>CJ Product Hunter</strong> extension in Chrome — it uses this same account.</p>
+      <a class="btn secondary" href="#" id="memberLogout">Sign out</a>
+    </div>
+
+    <!-- Signed in: admin -->
+    <div id="adminView" class="done" hidden>
+      <div class="big">🛡️</div>
+      <h2>Welcome back, admin</h2>
+      <p class="sub">Open the admin panel to manage users, limits, devices and usage.</p>
+      <a class="btn" href="/admin">Open admin panel</a>
+      <a class="btn secondary" href="#" id="adminLogout">Sign out</a>
+    </div>
+
+    <div class="hint">
+      <strong>Extension users:</strong> install the Chrome extension, sign in there, then paste your
+      CJdropshipping API key once (<code>My CJ → API</code>). Everything else works automatically.
+    </div>
   </main>
-  <div id="detailModal" class="modal" hidden>
-    <div class="modal-card">
-      <button class="modal-close" id="modalClose" type="button" aria-label="Close">×</button>
-      <div id="modalBody"></div>
-    </div>
-  </div>
-  <div id="listingModal" class="modal" hidden>
-    <div class="modal-card modal-card-wide">
-      <button class="modal-close" id="listingClose" type="button" aria-label="Close">×</button>
-      <div id="listingBody"></div>
-    </div>
-  </div>
-  <div id="settingsModal" class="modal" hidden>
-    <div class="modal-card">
-      <button class="modal-close" id="settingsClose" type="button" aria-label="Close">×</button>
-      <div class="settings-body">
-        <h3>⚙ Settings</h3>
-        <p class="muted">Paste <strong>your own</strong> CJdropshipping API Key — sign in to your CJ account and copy it, so every user hunts with their own account.</p>
-        <label class="set-label" for="cjKeyInput">CJdropshipping API Key</label>
-        <div class="set-row">
-          <input id="cjKeyInput" type="password" placeholder="Paste API Key here (…@api@…)" autocomplete="off" spellcheck="false">
-          <button type="button" id="cjKeyToggle" class="set-toggle">Show</button>
-        </div>
-        <p class="set-hint">Where to get it: log in to your CJdropshipping account → <strong>My CJ → API</strong> (API Docs) → copy the API Key and paste it above. The key is validated with CJ before saving and is stored only on this machine (<code>data/settings.json</code>), never in the extension.</p>
-        <div class="set-meta" id="cjKeyMeta">Checking current key…</div>
-        <div class="mactions">
-          <button type="button" class="set-remove" id="cjKeyRemove">Remove saved key</button>
-          <button type="button" class="set-save" id="cjKeySave">Save API Key</button>
-        </div>
-        <div class="set-status" id="cjKeyStatus" role="status"></div>
-      </div>
-    </div>
-  </div>
-  <script src="/app.js"></script>
+
+  <script>
+    const TOKEN_KEY = "cj_ph_token";
+    const API = "/api";
+
+    const form = document.getElementById("authForm");
+    const msg = document.getElementById("authMsg");
+    const submitBtn = document.getElementById("submitBtn");
+    const switchBtn = document.getElementById("switchBtn");
+    const switchText = document.getElementById("switchText");
+    const formTitle = document.getElementById("formTitle");
+    const formSub = document.getElementById("formSub");
+    const nameWrap = document.getElementById("nameWrap");
+    const passwordInput = document.getElementById("password");
+
+    const memberView = document.getElementById("memberView");
+    const adminView = document.getElementById("adminView");
+
+    let mode = "signin";
+    let token = localStorage.getItem(TOKEN_KEY) || "";
+
+    function setMsg(text, tone) {
+      msg.textContent = text || "";
+      msg.className = "msg" + (tone ? " " + tone : "");
+    }
+
+    function setMode(next) {
+      mode = next;
+      const signingUp = mode === "signup";
+      formTitle.textContent = signingUp ? "Create account" : "Sign in";
+      formSub.textContent = signingUp
+        ? "Create your account for the CJ Product Hunter extension."
+        : "Access the admin panel or manage your account.";
+      submitBtn.textContent = signingUp ? "Create account" : "Sign in";
+      switchText.textContent = signingUp ? "Already have an account?" : "Don't have an account?";
+      switchBtn.textContent = signingUp ? "Sign in" : "Sign up";
+      nameWrap.hidden = !signingUp;
+      passwordInput.autocomplete = signingUp ? "new-password" : "current-password";
+      setMsg("");
+    }
+
+    switchBtn.addEventListener("click", () => setMode(mode === "signin" ? "signup" : "signin"));
+
+    async function api(path, { method = "GET", body } = {}) {
+      const res = await fetch(API + path, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: "Bearer " + token } : {})
+        },
+        ...(body ? { body: JSON.stringify(body) } : {})
+      });
+      let data = null;
+      try { data = await res.json(); } catch { /* empty body */ }
+      return { res, data };
+    }
+
+    async function afterAuth() {
+      const { res, data } = await api("/auth/me");
+      if (!res.ok) {
+        token = "";
+        localStorage.removeItem(TOKEN_KEY);
+        return;
+      }
+      if (data.isAdmin) {
+        form.hidden = true;
+        adminView.hidden = false;
+        document.querySelector(".hint").hidden = true;
+      } else {
+        form.hidden = true;
+        memberView.hidden = false;
+        document.querySelector(".hint").hidden = true;
+      }
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+      if (!email || !password) return setMsg("Enter your email and password.", "error");
+      if (mode === "signup" && password.length < 8) {
+        return setMsg("Password must be at least 8 characters.", "error");
+      }
+
+      submitBtn.disabled = true;
+      setMsg(mode === "signup" ? "Creating your account…" : "Signing in…");
+      try {
+        const { res, data } = await api("/auth/" + (mode === "signup" ? "signup" : "login"), {
+          method: "POST",
+          body: {
+            email,
+            password,
+            fullName: document.getElementById("fullName").value.trim() || undefined
+          }
+        });
+        if (!res.ok) throw new Error((data && data.error) || "Request failed.");
+
+        if (mode === "signup") {
+          if (data.token) {
+            token = data.token;
+            localStorage.setItem(TOKEN_KEY, token);
+            await afterAuth();
+          } else {
+            setMsg("Account created. Check your email to confirm it, then sign in.", "ok");
+            setMode("signin");
+          }
+          return;
+        }
+
+        token = data.token;
+        localStorage.setItem(TOKEN_KEY, token);
+        await afterAuth();
+      } catch (error) {
+        setMsg(error.message || "Could not sign in.", "error");
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+
+    async function logout(event) {
+      event.preventDefault();
+      await api("/auth/logout", { method: "POST" }).catch(() => {});
+      token = "";
+      localStorage.removeItem(TOKEN_KEY);
+      location.reload();
+    }
+    document.getElementById("memberLogout").addEventListener("click", logout);
+    document.getElementById("adminLogout").addEventListener("click", logout);
+
+    if (token) afterAuth();
+  </script>
 </body>
 </html>

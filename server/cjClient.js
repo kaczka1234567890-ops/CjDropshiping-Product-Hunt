@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { getCjApiKey, apiKeyFingerprint } from "./settings.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -29,7 +30,32 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function readTokenCache() {
+// ── Per-request API key (multi-user safe) ────────────────
+// The cloud backend serves many users from one process, so the CJ key must
+// never be a module-level global. Every request runs inside runWithApiKey(),
+// and resolveApiKey() picks the key of *that* request's user.
+const cjKeyContext = new AsyncLocalStorage();
+
+export function runWithApiKey(apiKey, fn) {
+  const key = String(apiKey || "").trim();
+  if (!key) return fn();
+  return cjKeyContext.run({ apiKey: key }, fn);
+}
+
+function resolveApiKey() {
+  const store = cjKeyContext.getStore();
+  if (store?.apiKey) return store.apiKey;
+  return getCjApiKey();
+}
+
+// ── Access-token cache (memory first, file as fallback) ──
+// Serverless hosts have a read-only project dir, so the in-memory cache is
+// the primary store; the file cache only helps in local dev.
+const memoryTokenCache = new Map();
+
+function readTokenCache(keyFp) {
+  const cached = memoryTokenCache.get(keyFp);
+  if (cached) return cached;
   try {
     return JSON.parse(fs.readFileSync(TOKEN_CACHE_PATH, "utf8"));
   } catch {
@@ -38,14 +64,16 @@ function readTokenCache() {
 }
 
 function writeTokenCache(cache) {
+  if (cache?.keyFp) memoryTokenCache.set(cache.keyFp, cache);
   try {
     fs.writeFileSync(TOKEN_CACHE_PATH, JSON.stringify(cache, null, 2));
-  } catch (error) {
-    console.warn("Could not cache CJ access token:", error.message);
+  } catch {
+    /* read-only filesystem (serverless) — memory cache is enough */
   }
 }
 
 export function clearTokenCache() {
+  memoryTokenCache.clear();
   try {
     fs.rmSync(TOKEN_CACHE_PATH, { force: true });
   } catch {
@@ -139,11 +167,11 @@ export async function validateApiKey(apiKey) {
 }
 
 async function fetchAccessToken({ force = false } = {}) {
-  const apiKey = getCjApiKey();
+  const apiKey = resolveApiKey();
   if (!apiKey) {
     const error = new Error("Missing CJ API Key");
     error.status = 503;
-    error.publicMessage = "CJ API Key is not configured. Open Settings (⚙) and paste your CJ API Key, or set CJ_ACCESS_TOKEN in .env.";
+    error.publicMessage = "CJ API Key not set for your account. Open ⚙ Settings in the extension and paste your CJdropshipping API Key.";
     throw error;
   }
 
@@ -151,7 +179,7 @@ async function fetchAccessToken({ force = false } = {}) {
 
   const keyFp = apiKeyFingerprint(apiKey);
   if (!force) {
-    const cache = readTokenCache();
+    const cache = readTokenCache(keyFp);
     if (cache?.accessToken && cache?.expiresAt && cache?.keyFp === keyFp) {
       const expiresAt = Date.parse(cache.expiresAt);
       if (Number.isFinite(expiresAt) && Date.now() < expiresAt - 60_000) {
@@ -216,7 +244,7 @@ async function callCj(path, params = {}, { method = "GET" } = {}) {
     response = await send(token);
   }
 
-  if (response.status === 401 && isApiKey(getCjApiKey())) {
+  if (response.status === 401 && isApiKey(resolveApiKey())) {
     token = await fetchAccessToken({ force: true });
     response = await send(token);
   }
@@ -230,7 +258,7 @@ async function callCj(path, params = {}, { method = "GET" } = {}) {
     error.status = 502;
     error.upstreamStatus = response.status;
     error.publicMessage = response.status === 401 || response.status === 403
-      ? "CJ rejected authentication. Check the API Key in Settings (⚙) or .env and the API app status in your CJ account."
+      ? "CJ rejected authentication. Check your CJdropshipping API Key (⚙ Settings) and the API app status in your CJ account."
       : "CJ returned an error. Verify endpoint, parameters, API points/quota, and account access.";
     throw error;
   }
