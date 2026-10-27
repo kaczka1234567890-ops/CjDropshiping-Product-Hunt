@@ -159,6 +159,27 @@ alter table usage_logs enable row level security;
 alter table admin_policies enable row level security;
 alter table admin_audit_log enable row level security;
 
+-- ============================================
+-- Admin check used by every admin policy.
+-- SECURITY DEFINER: it reads profiles *without* applying RLS, which is what
+-- prevents "infinite recursion detected in policy for relation profiles"
+-- (42P17) when a policy on profiles queries profiles again.
+-- ============================================
+create or replace function public.is_admin()
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select exists (
+    select 1 from profiles p
+    where p.id = auth.uid()
+      and p.is_admin = true
+  );
+$$;
+grant execute on function public.is_admin() to anon, authenticated, service_role;
+
 -- Reset policies so a re-run never collides with older/duplicate ones.
 do $$
 declare r record;
@@ -177,7 +198,7 @@ create policy "profiles_self" on profiles
   for select using (auth.uid() = id);
 create policy "profiles_admin" on profiles
   for select using (
-    exists (select 1 from profiles p where p.id = auth.uid() and p.is_admin = true)
+    public.is_admin()
   );
 
 -- API Keys: owner can read/write own; admins read metadata only
@@ -185,7 +206,7 @@ create policy "keys_owner" on user_api_keys
   for all using (auth.uid() = user_id);
 create policy "keys_admin" on user_api_keys
   for select using (
-    exists (select 1 from profiles p where p.id = auth.uid() and p.is_admin = true)
+    public.is_admin()
   );
 
 -- Devices: owner sees own; admins see all
@@ -193,7 +214,7 @@ create policy "devices_owner" on user_devices
   for all using (auth.uid() = user_id);
 create policy "devices_admin" on user_devices
   for select using (
-    exists (select 1 from profiles p where p.id = auth.uid() and p.is_admin = true)
+    public.is_admin()
   );
 
 -- Usage logs: owners see own; admins see all
@@ -201,7 +222,7 @@ create policy "usage_owner" on usage_logs
   for select using (auth.uid() = user_id);
 create policy "usage_admin" on usage_logs
   for select using (
-    exists (select 1 from profiles p where p.id = auth.uid() and p.is_admin = true)
+    public.is_admin()
   );
 -- NOTE: no insert policy on purpose. The backend uses the service role
 -- (which bypasses RLS), so no client ever writes usage rows directly.
@@ -209,13 +230,13 @@ create policy "usage_admin" on usage_logs
 -- Admin policies: only admins can read/write
 create policy "policies_admin" on admin_policies
   for all using (
-    exists (select 1 from profiles p where p.id = auth.uid() and p.is_admin = true)
+    public.is_admin()
   );
 
 -- Audit log: only admins
 create policy "audit_admin" on admin_audit_log
   for all using (
-    exists (select 1 from profiles p where p.id = auth.uid() and p.is_admin = true)
+    public.is_admin()
   );
 
 -- ============================================

@@ -59,8 +59,20 @@ if (!/^[0-9a-fA-F]{64}$/.test(ENCRYPTION_KEY)) {
   process.exit(1);
 }
 
+// The data client ALWAYS talks to PostgREST as the service role:
+//  · the Authorization header is pinned explicitly, so supabase-js can never
+//    replace it with an in-memory user session token (which would silently
+//    turn on RLS for backend queries).
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false }
+  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+  global: { headers: { Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }
+});
+
+// Separate client for Supabase *Auth* calls (signUp / signIn / getUser / signOut).
+// Keeping it separate means a session created by a login can never leak into
+// the data client's requests.
+const authSupabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
 });
 
 // ── Encryption helpers ───────────────────────────────────
@@ -99,7 +111,7 @@ function requireAuth(req, res, next) {
   }
   const token = authHeader.slice(7);
   // Verify JWT with Supabase
-  supabase.auth.getUser(token)
+  authSupabase.auth.getUser(token)
     .then(({ data }) => {
       if (!data?.user) return res.status(401).json({ error: "Invalid token" });
       req.user = data.user;
@@ -219,7 +231,7 @@ app.post("/api/auth/signup", async (req, res) => {
     const { email, password, fullName } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: "Email and password are required." });
     if (String(password).length < 8) return res.status(400).json({ error: "Password must be at least 8 characters." });
-    const { data, error } = await supabase.auth.signUp({ email, password });
+    const { data, error } = await authSupabase.auth.signUp({ email, password });
     if (error) return res.status(400).json({ error: error.message });
     const userId = data.user?.id;
     if (userId) {
@@ -244,7 +256,7 @@ app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: "Email and password are required." });
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await authSupabase.auth.signInWithPassword({ email, password });
     if (error) return res.status(401).json({ error: error.message });
     res.json({ ok: true, token: data.session.access_token, userId: data.user.id });
   } catch (error) {
@@ -253,7 +265,7 @@ app.post("/api/auth/login", async (req, res) => {
 });
 
 app.post("/api/auth/logout", requireAuth, async (req, res) => {
-  await supabase.auth.signOut();
+  await authSupabase.auth.signOut();
   res.json({ ok: true });
 });
 
