@@ -1,5 +1,5 @@
 -- ============================================
--- CJ Product Hunter — Supabase Schema v2.1
+-- CJ Product Hunter — Supabase Schema v2.2
 -- Cloud-first · Multi-user · Admin-managed
 --
 -- IDEMPOTENT: safe to run on a fresh project AND safe to re-run on a
@@ -243,15 +243,18 @@ create policy "audit_admin" on admin_audit_log
 -- Helper Functions
 -- ============================================
 
--- Increment daily/monthly counters
+-- Increment daily/monthly counters.
+-- Upserts: a user created outside /api/signup (e.g. Supabase dashboard or the
+-- admin API) may have no admin_policies row — counters must still work.
 create or replace function increment_usage_counts(p_user_id uuid)
 returns void as $$
 begin
-  update admin_policies
-  set daily_api_count = daily_api_count + 1,
-      monthly_api_count = monthly_api_count + 1,
-      updated_at = now()
-  where user_id = p_user_id;
+  insert into admin_policies (user_id, daily_api_count, monthly_api_count)
+  values (p_user_id, 1, 1)
+  on conflict (user_id) do update
+    set daily_api_count = admin_policies.daily_api_count + 1,
+        monthly_api_count = admin_policies.monthly_api_count + 1,
+        updated_at = now();
 end;
 $$ language plpgsql security definer;
 
@@ -354,6 +357,45 @@ begin
   update admin_policies set daily_api_count = 0, updated_at = now();
 end;
 $$ language plpgsql security definer;
+
+-- ============================================
+-- Auto-create profile + policy rows for EVERY new auth user, wherever the
+-- account was created (app signup, Supabase dashboard, admin API).
+-- Without this, users created outside /api/signup would have no profile and
+-- no usage-counter row.
+-- Wrapped in a fault-tolerant DO block: if the platform ever forbids
+-- triggers on auth.users, the migration still completes.
+-- ============================================
+do $$
+begin
+  create or replace function public.handle_new_user()
+  returns trigger
+  language plpgsql
+  security definer
+  set search_path = public
+  as $fn$
+  begin
+    insert into public.profiles (id, email)
+    values (new.id, new.email)
+    on conflict (id) do nothing;
+
+    insert into public.admin_policies (user_id)
+    values (new.id)
+    on conflict (user_id) do nothing;
+
+    return new;
+  end;
+  $fn$;
+
+  drop trigger if exists on_auth_user_created on auth.users;
+  create trigger on_auth_user_created
+    after insert on auth.users
+    for each row
+    execute function public.handle_new_user();
+exception
+  when others then
+    raise notice 'handle_new_user trigger setup skipped: %', sqlerrm;
+end $$;
 
 -- ============================================
 -- Lock the helper functions down to the backend only.

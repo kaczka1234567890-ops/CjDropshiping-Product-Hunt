@@ -75,6 +75,15 @@ const authSupabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
 });
 
+// A stray rejection must never take the whole server down (Node 26 exits on
+// unhandled rejections; one failed background log would otherwise kill it).
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled rejection:", reason?.stack || reason?.message || reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught exception:", err?.stack || err);
+});
+
 // ── Encryption helpers ───────────────────────────────────
 const ALGORITHM = "aes-256-gcm";
 
@@ -147,26 +156,46 @@ async function requireAdmin(req, res, next) {
 
 // ── User access check ───────────────────────────────────
 async function checkAccess(userId, deviceId) {
-  const { data, error } = await supabase.rpc("check_user_access", {
-    p_user_id: userId,
-    p_device_id: deviceId
-  });
-  if (error) {
-    console.error("check_user_access error:", error.message);
-    return { allowed: true, is_blocked: false, daily_limit: null, monthly_limit: null, daily_used: 0, monthly_used: 0, features: { search: true, listing: true, enrich: true }, reason: null };
+  const fallback = {
+    allowed: true, is_blocked: false, daily_limit: null, monthly_limit: null,
+    daily_used: 0, monthly_used: 0,
+    features: { search: true, listing: true, enrich: true }, reason: null
+  };
+  try {
+    const { data, error } = await supabase.rpc("check_user_access", {
+      p_user_id: userId,
+      p_device_id: deviceId
+    });
+    if (error) {
+      console.error("check_user_access error:", error.message);
+      return fallback;
+    }
+    return data || fallback;
+  } catch (err) {
+    console.error("check_user_access failed:", err?.message || err);
+    return fallback;
   }
-  return data;
 }
 
-function recordUsage(userId, endpoint, ipAddress, deviceId, responseCode) {
-  supabase.from("usage_logs").insert({
-    user_id: userId,
-    endpoint,
-    ip_address: ipAddress,
-    device_id: deviceId,
-    response_code: responseCode
-  }).catch(err => console.warn("usage log failed:", err.message));
-  supabase.rpc("increment_usage_counts", { p_user_id: userId }).catch(() => {});
+// Fire-and-forget: logs usage + bumps counters. Must NEVER throw — a supabase
+// query builder is a thenable (no .catch), so wrap it in async/try.
+async function recordUsage(userId, endpoint, ipAddress, deviceId, responseCode) {
+  try {
+    await supabase.from("usage_logs").insert({
+      user_id: userId,
+      endpoint,
+      ip_address: ipAddress,
+      device_id: deviceId,
+      response_code: responseCode
+    });
+  } catch (err) {
+    console.warn("usage log failed:", err?.message || err);
+  }
+  try {
+    await supabase.rpc("increment_usage_counts", { p_user_id: userId });
+  } catch (err) {
+    console.warn("usage counter failed:", err?.message || err);
+  }
 }
 
 function getDeviceId(req) {
@@ -177,14 +206,18 @@ function getDeviceId(req) {
 }
 
 async function registerDevice(userId, deviceId, userAgent, ipAddress) {
-  const { error } = await supabase.from("user_devices").upsert({
-    user_id: userId,
-    device_id: deviceId,
-    user_agent: userAgent,
-    ip_address: ipAddress,
-    last_seen: new Date().toISOString()
-  }, { onConflict: "user_id,device_id" });
-  if (error) console.warn("device register failed:", error.message);
+  try {
+    const { error } = await supabase.from("user_devices").upsert({
+      user_id: userId,
+      device_id: deviceId,
+      user_agent: userAgent,
+      ip_address: ipAddress,
+      last_seen: new Date().toISOString()
+    }, { onConflict: "user_id,device_id" });
+    if (error) console.warn("device register failed:", error.message);
+  } catch (err) {
+    console.warn("device register failed:", err?.message || err);
+  }
 }
 
 // ── App setup ───────────────────────────────────────────
@@ -370,22 +403,26 @@ app.get("/api/products", requireAuth, async (req, res) => {
     return res.status(403).json({ error: access.reason, access });
   }
   await registerDevice(req.user.id, deviceId, req.headers["user-agent"], req.ip);
-  
+
+  // NOTE: these are read at route scope because the response below (outside the
+  // CJ callback) echoes them back — declaring them inside the callback would
+  // make res.json() throw "sort is not defined".
+  const sort = String(req.query.sort || "winning");
+  const trending = String(req.query.trending || "") === "1";
+  const quick = String(req.query.quick || "") === "1";
+  const deliverTo = String(req.query.deliverTo || "").trim().toUpperCase() || undefined;
+  const countryCode = String(req.query.country || "").trim() || undefined;
+  const effectiveCountry = countryCode || (quick ? (deliverTo || "US") : undefined);
+
   try {
     const result = await withCjKey(req.user.id, res, async (key) => {
-      const query = String(req.query.q || "").trim();
+      const query = String(req.query.q || req.query.query || "").trim();
       const page = Math.max(1, Number.parseInt(String(req.query.page || "1"), 10) || 1);
-      const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(req.query.pageSize || "20"), 10) || 20));
-      const sort = String(req.query.sort || "winning");
-      const trending = String(req.query.trending || "") === "1";
+      const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(req.query.pageSize || req.query.limit || "20"), 10) || 20));
       const freeShipping = String(req.query.freeShipping || "") === "1";
       const minStock = req.query.minStock !== undefined ? Number(req.query.minStock) : undefined;
       const minPrice = req.query.minPrice !== undefined ? Number(req.query.minPrice) : undefined;
       const maxPrice = req.query.maxPrice !== undefined ? Number(req.query.maxPrice) : undefined;
-      const countryCode = String(req.query.country || "").trim() || undefined;
-      const quick = String(req.query.quick || "") === "1";
-      const deliverTo = String(req.query.deliverTo || "").trim().toUpperCase() || undefined;
-      const effectiveCountry = countryCode || (quick ? (deliverTo || "US") : undefined);
       const quickMark = Boolean(quick && effectiveCountry && String(effectiveCountry).toUpperCase() !== "CN");
 
       const result = await searchProducts({
