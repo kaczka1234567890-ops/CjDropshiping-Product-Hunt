@@ -117,7 +117,23 @@ exception
   when others then null;            -- never block the migration on a constraint
 end $$;
 
--- Remove helper functions left over from older schema drafts
+-- Remove helper functions and event triggers left over from older schema drafts
+do $$
+declare r record;
+begin
+  -- drop event triggers that call the legacy function first (they depend on it)
+  for r in
+    select t.evtname
+      from pg_event_trigger t
+     where t.evtname = 'ensure_rls'
+        or coalesce(pg_get_eventtrigger_function(t.oid), '') = 'rls_auto_enable'
+  loop
+    execute format('drop event trigger if exists %I', r.evtname);
+  end loop;
+exception
+  when others then null;            -- cleanup must never block the migration
+end $$;
+
 do $$
 declare r record;
 begin
@@ -127,8 +143,10 @@ begin
       join pg_namespace n on n.oid = p.pronamespace
      where n.nspname = 'public' and p.proname = 'rls_auto_enable'
   loop
-    execute 'drop function if exists ' || r.sig;
+    execute 'drop function if exists ' || r.sig || ' cascade';
   end loop;
+exception
+  when others then null;            -- cleanup must never block the migration
 end $$;
 
 -- ============================================
