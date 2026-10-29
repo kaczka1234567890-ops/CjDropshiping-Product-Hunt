@@ -951,6 +951,8 @@ app.get("/api/enrich", requireAuth, async (req, res) => {
             const detailDaysSinceListing = detail?.daysSinceListing ?? null;
             return {
               id,
+              cjCost: detail?.product?.cjCost ?? null,
+              suggestSellPrice: detail?.product?.suggestSellPrice ?? null,
               totalSales,
               sold90d,
               sold30d,
