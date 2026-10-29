@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Help — CJ Product Hunter</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brandmark">PH</div>
+    <div><div class="brand">Product Hunter</div><div class="subbrand">Help & Documentation</div></div>
+    <a href="/" class="status" style="text-decoration:none">← Back to App</a>
+  </header>
+  <main class="container">
+    <h1>Help & Documentation</h1>
+    <p class="muted">Complete A-Z guide for CJ Product Hunter — web app & Chrome extension.</p>
+
+    <section id="getting-started">
+      <h2>🚀 Getting Started</h2>
+      <ol>
+        <li><strong>Sign up / Sign in</strong> — Create an account or sign in at <a href="/">cj-winning-product-hunter-poc.vercel.app</a></li>
+        <li><strong>Add your CJ API Key</strong> — Click ⚙ Settings → Paste your CJdropshipping API Key (from <code>My CJ → API</code> in your CJ account)</li>
+        <li><strong>Start hunting</strong> — Search products, use Trending Winners, or Best-Selling modes</li>
+      </ol>
+      <p><strong>Note:</strong> Each user uses their own CJ API key. Keys are encrypted on our server and never shared.</p>
+    </section>
+
+    <section id="chrome-extension">
+      <h2>🧩 Chrome Extension</h2>
+      <h3>Installation</h3>
+      <ol>
+        <li>Download <code>cj-product-hunter-extension.zip</code> from the repository</li>
+        <li>Open <code>chrome://extensions</code> → Enable "Developer mode"</li>
+        <li>Click "Load unpacked" → Select the extracted <code>extension/</code> folder</li>
+        <li>Click the extension icon → Sign in with your account → Enter your CJ API Key</li>
+      </ol>
+      <h3>Features</h3>
+      <ul>
+        <li><strong>Side Panel</strong> — Stays open while you browse CJ (click extension icon)</li>
+        <li><strong>Popup</strong> — Quick search from toolbar</li>
+        <li><strong>Always-on Window</strong> — "Open as always-on window" button for detached panel</li>
+        <li><strong>Dark/Light mode</strong> — 🌙 toggle in header</li>
+      </ul>
+    </section>
+
+    <section id="search-modes">
+      <h2>🔍 Search Modes</h2>
+      <table>
+        <thead><tr><th>Mode</th><th>Description</th><th>Best For</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Keyword Search</strong></td><td>Search by product name, SKU, category</td><td>Specific product research</td></tr>
+          <tr><td><strong>🔥 Trending Winners</strong></td><td>CJ's trending/winning products feed</td><td>Finding hot products fast</td></tr>
+          <tr><td><strong>🛒 Best-Selling</strong></td><td>Products sorted by actual CJ order count (enrichment required)</td><td>Verified sales velocity</td></tr>
+          <tr><td><strong>🏆 Best Sellers (Supplier)</strong></td><td>Top suppliers by aggregate sales across 7/30/90 days</td><td>Supplier-level analysis</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="filters">
+      <h2>⚙ Filters</h2>
+      <h3>Basic Filters</h3>
+      <ul>
+        <li><strong>Price range</strong> — Min/Max CJ cost (USD)</li>
+        <li><strong>Stock range</strong> — Min/Max available inventory</li>
+        <li><strong>Sellers (listed by)</strong> — Min/Max number of sellers who listed this product</li>
+        <li><strong>Country / Warehouse</strong> — Filter by ship-from warehouse (CN, US, TH, etc.)</li>
+        <li><strong>Deliver to</strong> — Destination country for shipping estimates</li>
+        <li><strong>Free shipping</strong> — Only products with free shipping</li>
+        <li><strong>Quick delivery</strong> — Stock available in destination warehouse</li>
+      </ul>
+      <h3>Listing Age Filters (require enrichment)</h3>
+      <ul>
+        <li><strong>🆕 New listing</strong> — Listed on CJ ≤ 7 days ago</li>
+        <li><strong>✨ New product</strong> — Listed on CJ ≤ 30 days ago</li>
+        <li><strong>♻ Re-listing</strong> — Was inactive, now active again</li>
+        <li><strong>🚫 Never listed</strong> — 0 sellers have listed this product</li>
+        <li><strong>Max days since listed</strong> — Only show products ≤ N days old</li>
+      </ul>
+    </section>
+
+    <section id="product-cards">
+      <h2>📦 Product Cards — What You See</h2>
+      <ul>
+        <li><strong>CJ Cost / Promo Price</strong> — Your cost from CJ</li>
+        <li><strong>🏪 Sellers</strong> — Number of sellers who listed this product</li>
+        <li><strong>Stock</strong> — Available inventory</li>
+        <li><strong>🚀 Delivery</strong> — Estimated days / Quick delivery badge</li>
+        <li><strong>📅 Listed age</strong> — Days since first listed on CJ</li>
+        <li><strong>Supplier</strong> — Vendor name (click "Supplier info" for details)</li>
+        <li><strong>Score</strong> — Winning score (0-100) with label</li>
+        <li><strong>💰 Est. Revenue / ✅ Est. Profit / 📈 Margin</strong> — Profit estimation (see <a href="#profit">Profit Calculation</a>)</li>
+        <li><strong>📊 View analysis →</strong> — Full detail modal with sales, reviews, supplier, logistics</li>
+        <li><strong>📅 Listing age →</strong> — Focused modal with listing date details</li>
+        <li><strong>🏪 List to CJ</strong> — One-click listing to your CJ store</li>
+      </ul>
+    </section>
+
+    <section id="profit" name="profit">
+      <h2>💰 Profit / Loss Estimation</h2>
+      <p>Each product card shows a profit section when data is available:</p>
+      <pre>💰 Est. revenue $X,XXX.XX
+✅ Est. profit $X,XXX.XX
+📈 XX% margin</pre>
+      <h3>Formula</h3>
+      <ul>
+        <li><strong>Revenue</strong> = Suggested Sell Price × Monthly Estimated Sales (dailyEst × 30) or Total Sales or 100</li>
+        <li><strong>Gross Profit</strong> = Revenue − (CJ Cost × Quantity)</li>
+        <li><strong>Net Profit</strong> = Gross Profit − $5 Shipping − Platform Fee (15% of Revenue)</li>
+        <li><strong>Margin %</strong> = (Net Profit / Revenue) × 100</li>
+      </ul>
+      <h3>Margin Color Coding</h3>
+      <ul>
+        <li>🟢 <strong>Green (>30%)</strong> — Excellent margin</li>
+        <li>🟠 <strong>Orange (15-30%)</strong> — Moderate margin</li>
+        <li>🔴 <strong>Red (<15%)</strong> — Low margin, review carefully</li>
+      </ul>
+      <p class="muted"><small>* Estimates based on CJ sales data (90-day sales, order count). Actual results vary by marketing, competition, returns, etc.</small></p>
+    </section>
+
+    <section id="supplier-analysis">
+      <h2>🏆 Best Sellers — Supplier Analysis</h2>
+      <p>Click <strong>🏆 Best Sellers</strong> → Enter keyword → Select ship-to country → Search</p>
+      <h3>What you get</h3>
+      <ul>
+        <li>Suppliers ranked by total sales (7d/30d/90d toggle)</li>
+        <li>Country filter — Only suppliers with stock in selected warehouse</li>
+        <li>Expandable supplier rows → Top 5 products with sales, profit, listing age</li>
+        <li>Click product → Full detail modal</li>
+      </ul>
+    </section>
+
+    <section id="detail-modal">
+      <h2>📊 View Analysis — Detail Modal</h2>
+      <p>Click <strong>📊 View analysis →</strong> on any product card for:</p>
+      <ul>
+        <li><strong>Product info</strong> — SKU, images, variants, category</li>
+        <li><strong>Pricing</strong> — CJ cost, suggested retail, margin estimate</li>
+        <li><strong>Supplier</strong> — Name, website, email, phone, warehouse countries</li>
+        <li><strong>Sales</strong> — Total CJ orders, 7d/30d/90d estimates, last order date</li>
+        <li><strong>Reviews</strong> — Total, average rating, recent breakdown</li>
+        <li><strong>Logistics</strong> — Sellers count, free shipping, stock by country</li>
+        <li><strong>Listing age</strong> — Exact first-listed date, days ago</li>
+        <li><strong>List to CJ</strong> — Variant pricing, shipping quotes, one-click publish</li>
+      </ul>
+    </section>
+
+    <section id="listing-age">
+      <h2>📅 Listing Age Modal</h2>
+      <p>Click <strong>📅 Listing age →</strong> for a focused view:</p>
+      <ul>
+        <li>First listed date (from CJ <code>createrTime</code> field)</li>
+        <li>Days since listing (human-readable: "X days ago" / "X months ago" / "X years ago")</li>
+        <li>Listing status badges (🆕 New ≤7d, ✨ New ≤30d, ♻ Re-listing)</li>
+        <li>Data source indicator (CJ productDetail vs enrich API)</li>
+      </ul>
+    </section>
+
+    <section id="pagination">
+      <h2>📄 Pagination</h2>
+      <ul>
+        <li><strong>Web app</strong> — 20 products/page, Prev/Next buttons</li>
+        <li><strong>Extension</strong> — 50 products/page, Prev/Next buttons</li>
+        <li>Page number shown as "Page X of Y"</li>
+      </ul>
+    </section>
+
+    <section id="dark-mode">
+      <h2>🌙 Dark / Light Mode</h2>
+      <ul>
+        <li>Toggle in top bar (web app, popup, side panel)</li>
+        <li>Preference saved in browser <code>localStorage</code></li>
+        <li>All profit/loss colors adapt to theme</li>
+      </ul>
+    </section>
+
+    <section id="admin-panel">
+      <h2>👑 Admin Panel</h2>
+      <p>Access at <code>/admin</code> (requires <code>is_admin=true</code> in Supabase profiles table)</p>
+      <h3>Active Users Widget</h3>
+      <ul>
+        <li><strong>🟢 Online now</strong> — Heartbeat in last 5 minutes</li>
+        <li><strong>Total registered</strong> — All users</li>
+        <li><strong>Active (24h)</strong> — Users with heartbeat in last 24 hours</li>
+      </ul>
+      <h3>Two-Card Layout</h3>
+      <ul>
+        <li>Left: Active Users (green dot = online)</li>
+        <li>Right: All Registered Users</li>
+      </ul>
+      <h3>User Management</h3>
+      <ul>
+        <li>Block / Unblock user</li>
+        <li>Set daily / monthly API limits</li>
+        <li>Device block / unblock</li>
+        <li>Password reset</li>
+        <li>Delete CJ API key</li>
+        <li>Usage logs & audit log</li>
+      </ul>
+    </section>
+
+    <section id="api-limits">
+      <h2>📊 API Limits & Usage</h2>
+      <ul>
+        <li>Each user has daily/monthly limits (set by admin)</li>
+        <li>Current usage shown in Settings modal</li>
+        <li>Resets at 00:00 UTC (daily) / 1st of month (monthly)</li>
+        <li>Heartbeat every 60s marks user online</li>
+      </ul>
+    </section>
+
+    <section id="troubleshooting">
+      <h2>🔧 Troubleshooting</h2>
+      <table>
+        <thead><tr><th>Issue</th><th>Solution</th></tr></thead>
+        <tbody>
+          <tr><td>"CJ API key needed"</td><td>Paste your CJ API Key in Settings (⚙ Key)</td></tr>
+          <tr><td>"Server not reachable"</td><td>Check internet; backend may be cold-starting (wait 10s)</td></tr>
+          <tr><td>"Daily/Monthly limit reached"</td><td>Wait for reset or ask admin to increase limit</td></tr>
+          <tr><td>"Invalid API key"</td><td>Re-enter key from <code>My CJ → API</code>; ensure no extra spaces</td></tr>
+          <tr><td>No products found</td><td>Loosen filters (price, stock, sellers, listing age)</td></tr>
+          <tr><td>Profit shows "—"</td><td>Needs enrichment data (click product or wait for auto-enrich)</td></tr>
+          <tr><td>Listing age unavailable</td><td>Run Trending/Best-Selling (triggers enrichment) or click "📅 Listing age →"</td></tr>
+          <tr><td>Extension "Failed to fetch"</td><td>Re-enter API Key; check chrome.storage for stale localhost URL</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="privacy">
+      <h2>🔒 Privacy & Security</h2>
+      <ul>
+        <li>Your CJ API Key is <strong>encrypted (AES-256-GCM)</strong> on our server</li>
+        <li>Extension never stores your API key locally</li>
+        <li>Passwords hashed with bcrypt (Supabase Auth)</li>
+        <li>No analytics, no tracking, no third-party scripts</li>
+        <li>Open source — audit the code</li>
+      </ul>
+    </section>
+
+    <section id="shortcuts">
+      <h2>⌨ Keyboard Shortcuts</h2>
+      <ul>
+        <li><kbd>Enter</kbd> in search box — Run search</li>
+        <li><kbd>Escape</kbd> — Close any modal</li>
+        <li><kbd>Ctrl/Cmd + K</kbd> — Focus search (web app)</li>
+      </ul>
+    </section>
+
+    <footer style="margin-top:48px;padding-top:24px;border-top:1px solid var(--border);color:var(--muted);font-size:13px">
+      <p>CJ Product Hunter v1.0.2 — <a href="https://github.com" target="_blank">GitHub</a> · <a href="https://cj-winning-product-hunter-poc.vercel.app">Live App</a></p>
+      <p>Not affiliated with CJdropshipping. Use at your own risk.</p>
+    </footer>
+  </main>
+</body>
+</html>
