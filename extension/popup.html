@@ -48,6 +48,8 @@
       </div>
       <div class="user-bar" id="userBar">
         <span class="email" id="userEmail" title=""></span>
+        <button type="button" class="btn-sm" id="themeToggle" title="Toggle dark/light mode">🌙</button>
+        <a href="/help" target="_blank" class="btn-sm" title="A-Z help guide" style="text-decoration:none">❓</a>
         <button type="button" class="btn-sm" id="settingsBtn" title="CJdropshipping API Key">⚙ Key</button>
         <button type="button" class="btn-sm" id="logoutBtn">Logout</button>
       </div>
@@ -61,6 +63,10 @@
         <label>Min price ($)<input type="number" id="fMinPrice" min="0" step="0.01" placeholder="8"></label>
         <label>Max price ($)<input type="number" id="fMaxPrice" min="0" step="0.01" placeholder="60"></label>
         <label>Min stock<input type="number" id="fMinStock" min="0" step="1" placeholder="100"></label>
+        <label>Max stock<input type="number" id="fMaxStock" min="0" step="1" placeholder="5000"></label>
+        <label>Max days since listed<input type="number" id="fMaxDays" min="0" step="1" placeholder="e.g. 30 (only show ≤ N days old)"></label>
+        <label>Min sellers (listed by)<input type="number" id="fMinListed" min="0" step="1" placeholder="e.g. 1"></label>
+        <label>Max sellers (listed by)<input type="number" id="fMaxListed" min="0" step="1" placeholder="e.g. 5"></label>
         <label>Deliver to:
           <select id="fDeliverTo">
             <option value="US" selected>US</option>
@@ -82,6 +88,42 @@
     <div class="modes">
       <button type="button" id="trendingButton" class="chip">🔥 Trending</button>
       <button type="button" id="bestSellingButton" class="chip">🛒 Best-Selling</button>
+    </div>
+    <div class="country-filter" id="countryFilterBar" hidden>
+      <label for="bestSellerCountry">🌍 Ship to:</label>
+      <select id="bestSellerCountry">
+        <option value="">All countries</option>
+        <option value="US">🇺🇸 United States</option>
+        <option value="GB">🇬🇧 United Kingdom</option>
+        <option value="CA">🇨🇦 Canada</option>
+        <option value="AU">🇦🇺 Australia</option>
+        <option value="DE">🇩🇪 Germany</option>
+        <option value="FR">🇫🇷 France</option>
+        <option value="ES">🇪🇸 Spain</option>
+        <option value="IT">🇮🇹 Italy</option>
+        <option value="NL">🇳🇱 Netherlands</option>
+        <option value="JP">🇯🇵 Japan</option>
+        <option value="KR">🇰🇷 South Korea</option>
+        <option value="SG">🇸🇬 Singapore</option>
+        <option value="MY">🇲🇾 Malaysia</option>
+        <option value="TH">🇹🇭 Thailand</option>
+        <option value="VN">🇻🇳 Vietnam</option>
+        <option value="PH">🇵🇭 Philippines</option>
+        <option value="IN">🇮🇳 India</option>
+        <option value="BR">🇧🇷 Brazil</option>
+        <option value="MX">🇲🇽 Mexico</option>
+        <option value="AE">🇦🇪 UAE</option>
+        <option value="SA">🇸🇦 Saudi Arabia</option>
+        <option value="IL">🇮🇱 Israel</option>
+        <option value="ZA">🇿🇦 South Africa</option>
+        <option value="NZ">🇳🇿 New Zealand</option>
+        <option value="SE">🇸🇪 Sweden</option>
+        <option value="NO">🇳🇴 Norway</option>
+        <option value="CH">🇨🇭 Switzerland</option>
+        <option value="PL">🇵🇱 Poland</option>
+        <option value="BE">🇧🇪 Belgium</option>
+        <option value="AT">🇦🇹 Austria</option>
+      </select>
     </div>
 
     <div id="status" class="status">Ready</div>
@@ -116,6 +158,17 @@
         <button type="button" id="cjKeyToggle" class="info-btn">Show</button>
       </div>
       <p class="mnote">Where to find it: log in to CJdropshipping → <strong>My CJ → API</strong> → copy the API Key.</p>
+      <div class="cj-api-guide" style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:12px;margin-bottom:10px;">
+        <strong style="font-size:12px;color:#c27803;">📋 How to get your CJ API Key:</strong>
+        <ol style="margin:6px 0 0 16px;font-size:11.5px;color:var(--text);line-height:1.9;">
+          <li>Log in to <strong>https://www.cjdropshipping.com</strong></li>
+          <li>Go to <strong>My CJ → API</strong> (or <strong>Integrations → API App</strong>)</li>
+          <li>If needed, click <strong>Enable</strong> on the API App</li>
+          <li>Click <strong>Generate</strong> and copy your API key</li>
+          <li>Paste it here — it looks like <code style="background:#f5f5f5;padding:1px 4px;border-radius:3px;">xxx@api@yyy</code></li>
+        </ol>
+        <p style="margin:6px 0 0;font-size:11px;color:var(--muted);">Your key is encrypted and stored securely.</p>
+      </div>
       <div class="mactions">
         <button type="button" id="cjKeySave" class="lp-btn lp-btn-primary">Save API Key</button>
         <button type="button" id="cjKeyRemove" class="info-btn">Remove saved key</button>

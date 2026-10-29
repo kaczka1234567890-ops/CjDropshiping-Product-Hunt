@@ -5,7 +5,7 @@
    override without editing this file:
      chrome.storage.local.set({ apiBase: "https://your-app.vercel.app" })
 */
-const DEFAULT_API_BASE = "http://localhost:3000";
+const DEFAULT_API_BASE = "https://cj-winning-product-hunter-poc.vercel.app";
 let API_BASE = DEFAULT_API_BASE;
 
 const TOKEN_STORAGE_KEY = "cjToken";
@@ -21,7 +21,11 @@ const queryInput = document.querySelector("#query");
 const searchButton = document.querySelector("#searchButton");
 const trendingButton = document.querySelector("#trendingButton");
 const bestSellingButton = document.querySelector("#bestSellingButton");
+const bestSellerSupplierButton = document.querySelector("#bestSellerSupplierButton");
+const bestSellerCountrySelect = document.querySelector("#bestSellerCountry");
+const countryFilterBar = document.querySelector("#countryFilterBar");
 const resetFiltersButton = document.querySelector("#resetFilters");
+const themeToggle = document.querySelector("#themeToggle");
 const modal = document.querySelector("#detailModal");
 const modalBody = document.querySelector("#modalBody");
 const modalClose = document.querySelector("#modalClose");
@@ -43,7 +47,20 @@ async function api(path, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
   if (token) headers.Authorization = `Bearer ${token}`;
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  let res;
+  try {
+    console.log(`[api] ${options.method || 'GET'} ${API_BASE}${path}`, headers.Authorization ? 'with token' : 'no token');
+    res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+    console.log(`[api] response:`, res.status, res.statusText);
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      console.error(`[api] error body:`, text);
+      throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
+    }
+  } catch (err) {
+    console.error(`[api] fetch failed:`, err && err.message ? err.message : String(err));
+    throw new Error(`Network error: ${err && err.message ? err.message : String(err)}. Check console.`);
+  }
   if (res.status === 401) {
     await forgetSession();
     showAuth("Your session expired. Please sign in again.");
@@ -110,10 +127,19 @@ async function saveSession(value) {
 
 async function fetchMe() {
   try {
-    const res = await api("/auth/me");
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
+    console.log('[fetchMe] calling /api/auth/me with token:', token ? token.substring(0, 30) + '...' : 'NONE');
+    const res = await api("/api/auth/me");
+    console.log('[fetchMe] response ok:', res.ok, res.status);
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      console.warn("[fetchMe] non-ok response:", res.status, text);
+      return null;
+    }
+    const data = await res.json();
+    console.log('[fetchMe] success:', data);
+    return data;
+  } catch (err) {
+    console.warn("[fetchMe] caught error:", err && err.message ? err.message : String(err));
     return null;
   }
 }
@@ -128,7 +154,7 @@ function applyAccessState(me) {
       ? "🚫 Your account has been suspended. Contact support to restore access."
       : "";
   }
-  [searchButton, trendingButton, bestSellingButton].forEach((el) => {
+  [searchButton, trendingButton, bestSellingButton, bestSellerSupplierButton].forEach((el) => {
     if (el) el.disabled = !canSearch;
   });
   if (me.dailyLimit && me.dailyUsed >= me.dailyLimit) {
@@ -202,7 +228,10 @@ async function submitAuth() {
 
     await saveSession(data.token);
     const me = await fetchMe();
-    if (!me) throw new Error("Signed in, but the account could not be loaded. Try again.");
+    if (!me) {
+      const detail = `API returned no profile data (status: ${data.token ? 'unknown' : 'none'}). Check console in chrome://extensions/ → Inspect for details.`;
+      throw new Error("Signed in, but the account could not be loaded.\n" + detail);
+    }
     enterApp(me);
   } catch (error) {
     setAuthMessage(error.message || "Could not sign in.");
@@ -228,7 +257,7 @@ if (authOverlay) {
 if (logoutBtn) {
   logoutBtn.addEventListener("click", async () => {
     try {
-      await api("/auth/logout", { method: "POST" });
+      await api("/api/auth/logout", { method: "POST" });
     } catch {
       /* token already dead */
     }
@@ -255,6 +284,15 @@ function setMessage(text, isError) {
   messageEl.className = "message" + (isError ? " error" : "");
 }
 
+function formatListingAge(days, createrTime) {
+  const d = Number(days) || 0;
+  const months = Math.floor(d / 30);
+  const years = Math.floor(d / 365);
+  if (years > 0) return `${years} year(s) ago`;
+  if (months > 0) return `${months} month(s) ago`;
+  return `${d} day(s) ago`;
+}
+
 function scoreClass(score) {
   if (score >= 70) return "high";
   if (score >= 45) return "mid";
@@ -273,6 +311,9 @@ function readFilters() {
     minPrice: inputValue("#fMinPrice"),
     maxPrice: inputValue("#fMaxPrice"),
     minStock: inputValue("#fMinStock"),
+    maxStock: inputValue("#fMaxStock"),
+    minListed: inputValue("#fMinListed"),
+    maxListed: inputValue("#fMaxListed"),
     country: inputValue("#fCountry"),
     deliverTo: inputValue("#fDeliverTo"),
     freeShipping: freeShip && freeShip.checked ? "1" : "",
@@ -297,18 +338,42 @@ function readListingFilters() {
 function applyListingFilters(products) {
   const f = readListingFilters();
   const needsMeta = f.newListing || f.newProduct || f.reListing;
+  // Max days since listed — read from the DOM directly (not part of readListingFilters)
+  const maxDaysInput = document.querySelector("#fMaxDays");
+  const maxDays = maxDaysInput ? Number(maxDaysInput.value) || 0 : 0;
   return products.filter((p) => {
     if (f.neverListed && !(Number(p.listedNum) === 0)) return false;
     if (f.quickDelivery && p.quickDelivery !== true) return false;
-    if (!needsMeta) return true;
     const en = enrichMap[p.id];
-    const daysOld = en && en.daysOld !== null && en.daysOld !== undefined && Number.isFinite(Number(en.daysOld))
-      ? Number(en.daysOld)
+    const daysOld = en && en.daysSinceListing !== null && en.daysSinceListing !== undefined && Number.isFinite(Number(en.daysSinceListing))
+      ? Number(en.daysSinceListing)
       : null;
+    // Max days since listed (requires enrichment data)
+    if (maxDays && daysOld !== null && daysOld > maxDays) return false;
+    if (maxDays && daysOld === null) return false; // can't verify age — exclude
+    if (!needsMeta && !maxDays) return true;
     if (daysOld === null) return false;
     if (f.newListing && !(daysOld <= 7)) return false;
     if (f.newProduct && !(daysOld <= 30)) return false;
     if (f.reListing && en.isRelisting !== true) return false;
+    return true;
+  });
+}
+
+/* ── Client-side stock & seller-listings range filters ─────────── */
+function applyRangeFilters(products) {
+  const f = readFilters();
+  const minS = Number(f.minStock) || 0;
+  const maxS = Number(f.maxStock) || 0;
+  const minL = Number(f.minListed) || 0;
+  const maxL = Number(f.maxListed) || 0;
+  return products.filter((p) => {
+    const stock = Number(p.stock) || 0;
+    const listed = Number(p.listedNum) || 0;
+    if (minS && stock < minS) return false;
+    if (maxS && stock > maxS) return false;
+    if (minL && listed < minL) return false;
+    if (maxL && listed > maxL) return false;
     return true;
   });
 }
@@ -325,6 +390,8 @@ function buildParams(extra = {}) {
   if (f.minPrice) params.set("minPrice", f.minPrice);
   if (f.maxPrice) params.set("maxPrice", f.maxPrice);
   if (f.minStock) params.set("minStock", f.minStock);
+  if (f.minListed) params.set("minListed", f.minListed);
+  if (f.maxListed) params.set("maxListed", f.maxListed);
   if (f.country) params.set("country", f.country);
   if (f.deliverTo) params.set("deliverTo", f.deliverTo);
   if (f.quick) {
@@ -342,6 +409,28 @@ function formatCost(p) {
   return promo ? `${base} → ${Number(p.promoPrice).toFixed(2)}` : base;
 }
 
+function calculateProfit(p, en) {
+  const cjCost = Number(p?.cjCost) || 0;
+  const sellPrice = Number(p?.suggestSellPrice) || Number(p?.cjCost) * 1.5 || 0;
+  const totalSales = Number(en?.totalSales) || 0;
+  const dailyEst = Number(en?.dailyEst) || 0;
+  const revenue = sellPrice * (dailyEst * 30 || totalSales || 100);
+  const grossProfit = revenue - (cjCost * (dailyEst * 30 || totalSales || 100));
+  const netProfit = grossProfit - 5;
+  const margin = revenue > 0 ? Math.round(((netProfit / revenue) * 100) * 100) / 100 : 0;
+  return { revenue, grossProfit, netProfit, margin };
+}
+
+function profitRowsHtml(p, en) {
+  const calc = calculateProfit(p, en);
+  if (!calc || !calc.margin) return "";
+  const revenue = "$" + calc.revenue.toFixed(2);
+  const profit = "$" + calc.netProfit.toFixed(2);
+  const margin = calc.margin;
+  const marginClass = margin > 30 ? "profit-good" : margin > 15 ? "profit-moderate" : "profit-low";
+  return `<div class="row tags profit-section"><span>💰 Est. revenue ${revenue}</span><span>✅ Est. profit ${profit}</span><span class="profit-margin ${marginClass}">📈 ${margin}% margin</span></div>`;
+}
+
 function salesRowsHtml(p) {
   const en = enrichMap[p.id];
   if (en) {
@@ -354,13 +443,19 @@ function salesRowsHtml(p) {
     if (en.dailyEst !== null && en.dailyEst !== undefined) est.push(`📈 ~${Number(en.dailyEst).toLocaleString()}/day`);
     if (en.monthlyEst !== null && en.monthlyEst !== undefined) est.push(`📊 ~${Number(en.monthlyEst).toLocaleString()}/mo`);
     const flags = [];
+    if (en.daysSinceListing !== null && en.daysSinceListing !== undefined) {
+      const d = Number(en.daysSinceListing);
+      flags.push(`📅 listed ${d.toLocaleString()}d ago${d <= 7 ? " 🆕" : d <= 30 ? " ✨" : ""}`);
+    }
     if (en.isNewListing === true) flags.push("🆕 listing ≤7d");
     if (en.isNewProduct === true && en.isNewListing !== true) flags.push("✨ new ≤30d");
     if (en.isRelisting === true) flags.push("♻ re-listing");
     return `
       <div class="row tags"><span>🛒 Sold ${sold}</span>${bits.length ? `<span>${bits.join(" · ")}</span>` : ""}</div>
       ${est.length ? `<div class="row tags">${est.join("")}<span>estimate</span></div>` : ""}
-      ${flags.length ? `<div class="row tags">${flags.map((f) => `<span>${f}</span>`).join("")}</div>` : ""}`;
+      ${flags.length ? `<div class="row tags">${flags.map((f) => `<span>${f}</span>`).join("")}</div>` : ""}
+      ${en && calculateProfit(p, en)?.margin > 0 ? profitRowsHtml(p, en) : ""}
+      ${en.daysSinceListing !== null && en.daysSinceListing !== undefined ? `<div class="row tags"><span>📅 First listed: ${formatListingAge(en.daysSinceListing, en.createrTime)}</span><button type="button" class="view-analysis-btn" title="View listing details">📅 Listing age →</button></div>` : ""}`;
   }
   if (pendingEnrich.has(p.id)) return `<div class="row tags"><span>⏳ sales & ratings…</span></div>`;
   return "";
@@ -379,7 +474,8 @@ function renderProducts(products) {
     const item = document.createElement("article");
     item.className = "item";
     const stock = p.stock === null || p.stock === undefined ? "?" : String(p.stock);
-    const listed = p.listedNum === null || p.listedNum === undefined ? "listed ?" : `listed ${p.listedNum}×`;
+    const listed = p.listedNum === null || p.listedNum === undefined ? "listing ?" : `🏪 ${Number(p.listedNum).toLocaleString()} sellers`;
+    const en = enrichMap[p.id] || {};
     const tags = [
       listed,
       `stock ${stock}`,
@@ -388,6 +484,9 @@ function renderProducts(products) {
         : p.quickDelivery ? `<span class="qbadge">🚀 quick delivery</span>` : null,
       p.isFreeShipping ? "free ship" : null,
       p.hasVideo ? "video" : null,
+      en.daysSinceListing !== null && en.daysSinceListing !== undefined
+        ? `<span class="qbadge">📅 listed ${Number(en.daysSinceListing).toLocaleString()}d ago</span>`
+        : null,
       p.supplierName ? `supplier: ${escapeHtml(p.supplierName)}` : null,
       p.category ? escapeHtml(p.category) : null
     ].filter(Boolean).map(t => t.startsWith("<span") ? t : `<span>${t}</span>`).join("");
@@ -405,15 +504,25 @@ function renderProducts(products) {
           <span class="score ${scoreClass(Number(p.score) || 0)}">${escapeHtml(p.score)}/100</span>
           <span class="label">${escapeHtml(p.scoreLabel)}</span>
           <button type="button" class="info-btn list-btn" title="List this product to your CJ store">🏪 List to CJ</button>
-          <button type="button" class="info-btn">Supplier info</button>
+          <button type="button" class="info-btn" title="View supplier & product details">Supplier info</button>
+          <button type="button" class="info-btn listing-age-btn" title="View listing age details">📅 Listing age →</button>
         </div>
       </div>`;
     const imgEl = item.querySelector("img");
     if (imgEl) imgEl.addEventListener("error", () => { imgEl.style.display = "none"; });
+    // "📅 Listing age" button inside salesRowsHtml → open listing age modal
+    const analysisBtn = item.querySelector(".view-analysis-btn");
+    if (analysisBtn) {
+      analysisBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        openListingAgeModal(p.id);
+      });
+    }
     item.addEventListener("click", (event) => {
       if (event.target.closest(".info-btn")) {
         event.stopPropagation();
         if (event.target.closest(".list-btn")) openListing(p.id, p.name);
+        else if (event.target.closest(".listing-age-btn")) openListingAgeModal(p.id);
         else openDetail(p.id);
         return;
       }
@@ -486,6 +595,7 @@ function reviewsSectionHtml(reviews) {
 function salesSectionHtml(metrics, sales) {
   const w30 = metrics?.windows?.d30 || null;
   const w7 = metrics?.windows?.d7 || null;
+  const w90 = metrics?.windows?.d90 || null;
   const since = metrics?.trackingSince || "today";
   const sold90 = sales && Number.isFinite(Number(sales.sold90d)) ? Number(sales.sold90d) : null;
   const totalSales = sales && Number.isFinite(Number(sales.totalSales)) ? Number(sales.totalSales) : null;
@@ -508,9 +618,10 @@ function salesSectionHtml(metrics, sales) {
   return `
     <div class="msection">Sales Count</div>
     <div class="mrow"><span>Total Sales</span><strong>${escapeHtml(totalText)}</strong></div>
-    <div class="mrow"><span>Sales (Last 30 Days)</span><strong>${escapeHtml(windowEstimate(w30, 30))}</strong></div>
     <div class="mrow"><span>Sales (Last 7 Days)</span><strong>${escapeHtml(windowEstimate(w7, 7))}</strong></div>
-    <p class="mnote">Total Sales = CJ's real order count for this product (productDetail API). Window sales have no public CJ API — they are estimates from daily stock snapshots this app records (or CJ 90-day sales when available). Restocks can hide sales; signal, not proof.</p>`;
+    <div class="mrow"><span>Sales (Last 30 Days)</span><strong>${escapeHtml(windowEstimate(w30, 30))}</strong></div>
+    <div class="mrow"><span>Sales (Last 90 Days)</span><strong>${sold90 !== null ? `${sold90.toLocaleString()} (CJ actual)` : escapeHtml(windowEstimate(w90, 90))}</strong></div>
+    <p class="mnote">Total Sales = CJ's real order count for this product (productDetail API). 7/30-day sales are estimated from CJ 90-day sales or daily stock snapshots this app records. 90-day sales are actual CJ data when available. Restocks can hide sales; signal, not proof.</p>`;
 }
 
 function sellingSitesHtml(p) {
@@ -552,7 +663,8 @@ function detailHtml(p, reviews, metrics, sales, sup) {
     <div class="mrow"><span>Vendor name</span><strong>${supplier}</strong></div>
     <div class="mrow"><span>Source flag</span><strong>${escapeHtml(sourceFrom)}</strong></div>
     <div class="mrow"><span>Category</span><strong>${escapeHtml(p.category || raw.categoryName || "—")}</strong></div>
-    ${raw.createrTime ? `<div class="mrow"><span>Listed on CJ since</span><strong>${escapeHtml(String(raw.createrTime).slice(0, 10))}</strong></div>` : ""}
+    ${raw.createrTime ? `<div class="mrow"><span>First listed on CJ</span><strong>${escapeHtml(String(raw.createrTime).slice(0, 10))}</strong></div>` : ""}
+      ${raw.daysSinceListing !== null && raw.daysSinceListing !== undefined ? `<div class="mrow"><span>Days since first listed</span><strong>${Number(raw.daysSinceListing).toLocaleString()} day(s)${raw.daysSinceListing <= 7 ? " 🆕" : raw.daysSinceListing <= 30 ? " ✨" : ""}</strong></div>` : ""}
     <div class="mrow"><span>Website</span><strong>${sup?.website ? `<a class="mlink" href="${escapeHtml(/^https?:\/\//i.test(sup.website) ? sup.website : `https://${sup.website}`)}" target="_blank" rel="noopener">${escapeHtml(sup.website)}</a>` : "Not provided by CJ API"}</strong></div>
     <div class="mrow"><span>Email</span><strong>${sup?.email ? `<a class="mlink" href="mailto:${escapeHtml(sup.email)}">${escapeHtml(sup.email)}</a>` : "Not provided by CJ API"}</strong></div>
     <div class="mrow"><span>Phone</span><strong>${sup?.phone ? escapeHtml(sup.phone) : "Not provided by CJ API"}</strong></div>
@@ -601,6 +713,51 @@ async function openDetail(id) {
       closeModal();
       openListing(data.product?.id || id, data.product?.name || "");
     });
+  } catch (err) {
+    modalBody.innerHTML = `<p class="error">${escapeHtml(err.message || "Request failed.")}</p>`;
+  }
+}
+
+async function openListingAgeModal(id) {
+  if (!id) return;
+  modal.hidden = false;
+  modalBody.innerHTML = "<p class='message'>Loading listing age…</p>";
+  try {
+    const res = await api(`/api/products/${encodeURIComponent(id)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error([data.error, data.detail].filter(Boolean).join(" "));
+    const p = data.product;
+    const sales = data.sales || {};
+    const en = enrichMap[id] || {};
+    const days = sales.daysSinceListing ?? en.daysSinceListing ?? null;
+    const createrTime = sales.createrTime ?? en.createrTime ?? null;
+    const name = p?.name || "Untitled product";
+
+    let dateStr = "Unknown";
+    if (createrTime) {
+      const parsed = Number.isFinite(Number(createrTime)) ? Number(createrTime) : Date.parse(createrTime);
+      if (Number.isFinite(parsed) && parsed > 0) dateStr = new Date(parsed).toISOString().slice(0, 10);
+    }
+
+    modalBody.innerHTML = `
+      <h3 style="margin:0 36px 12px 0;font-size:15px;line-height:1.3">${escapeHtml(name)}</h3>
+      <div class="msection">Listing Age</div>
+      <div class="mrow"><span>First listed on CJ</span><strong>${escapeHtml(dateStr)}</strong></div>
+      ${days !== null && days !== undefined ? `
+        <div class="mrow"><span>Days since first listed</span><strong>${Number(days).toLocaleString()} day(s)</strong></div>
+        <div class="mrow"><span>Months since listed</span><strong>${Math.floor(Number(days) / 30)} month(s)</strong></div>
+        <div class="mrow"><span>Years since listed</span><strong>${Math.floor(Number(days) / 365)} year(s)</strong></div>
+        ${Number(days) <= 7 ? `<div class="mrow"><span>Status</span><strong>🆕 New listing (≤7 days)</strong></div>` : ""}
+        ${Number(days) <= 30 && Number(days) > 7 ? `<div class="mrow"><span>Status</span><strong>✨ New product (≤30 days)</strong></div>` : ""}
+      ` : `<div class="mrow"><span>Days since first listed</span><strong>Not available from CJ API</strong></div>`}
+      <div class="mactions">
+        <button type="button" id="modalListBtn" class="lp-btn-inline">🏪 List to CJ Store</button>
+        <button type="button" id="modalCloseBtn" class="button-secondary">Close</button>
+      </div>`;
+    const listBtn = document.querySelector("#modalListBtn");
+    if (listBtn) listBtn.addEventListener("click", () => { closeModal(); openListing(id, name); });
+    const closeBtn = document.querySelector("#modalCloseBtn");
+    if (closeBtn) closeBtn.addEventListener("click", closeModal);
   } catch (err) {
     modalBody.innerHTML = `<p class="error">${escapeHtml(err.message || "Request failed.")}</p>`;
   }
@@ -1079,15 +1236,28 @@ document.addEventListener("keydown", (event) => {
 });
 
 function finalizeBestSelling() {
+  const hasAnySales = shownProducts.some((p) => {
+    const av = enrichMap[p.id]?.totalSales;
+    return av !== null && av !== undefined && Number.isFinite(Number(av)) && Number(av) > 0;
+  });
   shownProducts = [...shownProducts].sort((a, b) => {
     const av = enrichMap[a.id]?.totalSales;
     const bv = enrichMap[b.id]?.totalSales;
-    const an = av !== null && av !== undefined && Number.isFinite(Number(av)) ? Number(av) : -1;
-    const bn = bv !== null && bv !== undefined && Number.isFinite(Number(bv)) ? Number(bv) : -1;
-    return bn - an;
+    const an = av !== null && av !== undefined && Number.isFinite(Number(av)) ? Number(av) : null;
+    const bn = bv !== null && bv !== undefined && Number.isFinite(Number(bv)) ? Number(bv) : null;
+    if (an !== null && bn !== null) return bn - an;
+    if (an !== null) return -1;
+    if (bn !== null) return 1;
+    // Fallback: sort by listedNum (CJ listing count = demand signal)
+    const la = Number(a.listedNum) || 0;
+    const lb = Number(b.listedNum) || 0;
+    return lb - la;
   });
   renderProducts(shownProducts);
-  setMessage(`Best-selling view: ${shownProducts.length} product(s) sorted by CJ total orders. Estimates are daily/monthly sales signals.`, false);
+  const note = hasAnySales
+    ? "sorted by CJ total orders"
+    : "CJ sales data unavailable — sorted by listing count instead";
+  setMessage(`Best-selling view: ${shownProducts.length} product(s) ${note}. Estimates are daily/monthly sales signals.`, false);
 }
 
 async function enrichShown(gen, isBestSelling, products, { filterFirst = false } = {}) {
@@ -1095,7 +1265,7 @@ async function enrichShown(gen, isBestSelling, products, { filterFirst = false }
   const ids = base.map((p) => p.id).filter(Boolean).filter((id) => !enrichMap[id]);
   const finish = () => {
     if (gen !== searchGen) return;
-    const filtered = applyListingFilters(base);
+    const filtered = applyRangeFilters(applyListingFilters(base));
     renderProducts(filtered);
     if (isBestSelling) {
       finalizeBestSelling();
@@ -1117,7 +1287,7 @@ async function enrichShown(gen, isBestSelling, products, { filterFirst = false }
   ids.forEach((id) => pendingEnrich.add(id));
   if (gen === searchGen) {
     if (filterFirst) setMessage(`Checking CJ listing age…0/${base.length}`, false);
-    else renderProducts(applyListingFilters(base));
+    else renderProducts(applyRangeFilters(applyListingFilters(base)));
   }
   for (let i = 0; i < ids.length; i += 3) {
     const chunk = ids.slice(i, i + 3);
@@ -1131,12 +1301,12 @@ async function enrichShown(gen, isBestSelling, products, { filterFirst = false }
     chunk.forEach((id) => pendingEnrich.delete(id));
     if (gen !== searchGen) return;
     if (filterFirst) {
-      const filtered = applyListingFilters(base);
+      const filtered = applyRangeFilters(applyListingFilters(base));
       renderProducts(filtered);
       const checked = base.length - (ids.length - i - chunk.length);
       setMessage(`Checking CJ listing age… ${checked}/${base.length} checked · ${filtered.length} match so far`, false);
     } else {
-      renderProducts(applyListingFilters(base));
+      renderProducts(applyRangeFilters(applyListingFilters(base)));
     }
   }
   finish();
@@ -1146,6 +1316,7 @@ async function runSearch({ trending = false, bestSelling = false } = {}) {
   searchButton.disabled = true;
   trendingButton.disabled = true;
   if (bestSellingButton) bestSellingButton.disabled = true;
+  if (bestSellerSupplierButton) bestSellerSupplierButton.disabled = true;
   searchButton.textContent = "Hunting…";
   const gen = ++searchGen;
   bestSellingMode = bestSelling;
@@ -1185,7 +1356,7 @@ async function runSearch({ trending = false, bestSelling = false } = {}) {
       setMessage(`Checking CJ listing age…0/${products.length}`, false);
       enrichShown(gen, bestSelling, products, { filterFirst: true });
     } else {
-      const filtered = applyListingFilters(products);
+      const filtered = applyRangeFilters(applyListingFilters(products));
       renderProducts(filtered);
       if (lf.neverListed && !filtered.length) {
         setMessage("0 products match 'never listed' (listedNum = 0) on this page. Try another page or trending mode.", false);
@@ -1209,6 +1380,7 @@ async function runSearch({ trending = false, bestSelling = false } = {}) {
     searchButton.disabled = false;
     trendingButton.disabled = false;
     if (bestSellingButton) bestSellingButton.disabled = false;
+    if (bestSellerSupplierButton) bestSellerSupplierButton.disabled = false;
     searchButton.textContent = "Hunt";
   }
 }
@@ -1228,9 +1400,246 @@ if (bestSellingButton) {
   });
 }
 
+if (bestSellerSupplierButton) {
+  bestSellerSupplierButton.addEventListener("click", () => {
+    // Show country filter when best sellers mode is active
+    if (countryFilterBar) countryFilterBar.hidden = false;
+    runBestSellerSupplierSearch();
+  });
+}
+
+// Hide country filter bar when regular search / trending / best-selling mode
+if (searchButton) {
+  searchButton.addEventListener("click", () => {
+    if (countryFilterBar) countryFilterBar.hidden = true;
+  });
+}
+if (trendingButton) {
+  trendingButton.addEventListener("click", () => {
+    if (countryFilterBar) countryFilterBar.hidden = true;
+  });
+}
+if (bestSellingButton) {
+  bestSellingButton.addEventListener("click", () => {
+    if (countryFilterBar) countryFilterBar.hidden = true;
+  });
+}
+
+async function runBestSellerSupplierSearch() {
+  const query = queryInput.value.trim();
+  if (!query) {
+    setMessage("Type a product keyword first, then click 🏆 Best Sellers.", true);
+    return;
+  }
+  searchButton.disabled = true;
+  trendingButton.disabled = true;
+  if (bestSellingButton) bestSellingButton.disabled = true;
+  if (bestSellerSupplierButton) bestSellerSupplierButton.disabled = true;
+  searchButton.textContent = "Hunting…";
+  resultsEl.innerHTML = "";
+  setMessage(`🏆 Searching best-selling suppliers for "${query}"…`, false);
+  try {
+    const countryFilter = bestSellerCountrySelect ? bestSellerCountrySelect.value : "";
+    const url = countryFilter
+      ? `/api/suppliers/best-sellers?sortBy=90d&q=${encodeURIComponent(query)}&pageSize=50&country=${encodeURIComponent(countryFilter)}`
+      : `/api/suppliers/best-sellers?sortBy=90d&q=${encodeURIComponent(query)}&pageSize=50`;
+    const res = await api(url);
+    const data = await res.json();
+    if (!res.ok) throw new Error([data.error, data.detail].filter(Boolean).join(" "));
+    const suppliers = data.suppliers || [];
+    const hasSales = suppliers.some(s => (s.sold90d || 0) > 0 || (s.totalSales || 0) > 0);
+    const filterNote = data.filterNote || "";
+    const filterCountry = data.filterCountry || "";
+    if (!suppliers.length) {
+      if (filterNote) {
+        setStatus(filterNote, "warn");
+        setMessage(filterNote, true);
+      } else {
+        setMessage("No suppliers found for this keyword.", false);
+        setStatus("Backend ready · 0 suppliers", "warn");
+      }
+      return;
+    }
+    const salesNote = hasSales
+      ? ""
+      : " · (CJ sales data unavailable — sorted by listing count instead)";
+    const countryLabel = filterCountry ? ` · Shipping to: ${filterCountry}` : "";
+    setStatus(`Backend ready · ${suppliers.length} suppliers found${salesNote}${countryLabel}`, "ok");
+    renderSupplierBestSellers(suppliers, data.sortBy, data.searchQuery, hasSales, filterCountry, filterNote);
+  } catch (err) {
+    const text = err.message || "Request failed.";
+    if (/Failed to fetch|NetworkError/i.test(text)) {
+      setStatus("Server not reachable", "error");
+      setMessage("Could not reach the server. Check your internet.", true);
+    } else if (/504|timed out|FUNCTION_INVOCATION_TIMEOUT/i.test(text)) {
+      setStatus("Request timed out", "error");
+      setMessage("The CJ API is slow right now — too many products to fetch. Try a narrower keyword, or click 🏆 Best Sellers again in a minute.", true);
+    } else if (/502|CJ returned|API key/i.test(text)) {
+      setStatus("CJ API error", "error");
+      setMessage("CJ API returned an error. This usually means your API key is invalid or you've hit the rate limit. Try again in a few minutes, or re-enter your CJ API key (⚙ Key).", true);
+    } else {
+      setStatus("Search failed", "error");
+      setMessage(text, true);
+    }
+  } finally {
+    searchButton.disabled = false;
+    trendingButton.disabled = false;
+    if (bestSellingButton) bestSellingButton.disabled = false;
+    if (bestSellerSupplierButton) bestSellerSupplierButton.disabled = false;
+    searchButton.textContent = "Hunt";
+  }
+}
+
+function renderSupplierBestSellers(suppliers, sortBy, searchQuery, hasSales, filterCountry, filterNote) {
+  const sortLabels = { "7d": "7 days", "30d": "30 days", "90d": "90 days" };
+  const container = document.createElement("div");
+  container.className = "supplier-results";
+
+  // ── Header / summary ──
+  const countryNote = filterCountry ? ` · Ship to: ${filterCountry}` : "";
+  const filterNoteHtml = filterNote
+    ? `<div class="supplier-filter-note">⚠️ ${escHtml(filterNote)}</div>`
+    : "";
+  container.innerHTML = `
+    <div class="supplier-summary">
+      <strong>🏆 Best-Selling Suppliers</strong>
+      <span class="supplier-meta">Sorted by CJ total orders (orderCount) · Query: "${escHtml(searchQuery)}" · ${suppliers.length} supplier(s)${hasSales ? "" : " · CJ sales data unavailable — sorted by listing count"}${countryNote}</span>
+    </div>
+    <div class="supplier-legend">
+      <span class="stat-badge stat-7d">7d sales</span>
+      <span class="stat-badge stat-30d">30d sales</span>
+      <span class="stat-badge stat-90d">90d sales</span>
+      <span class="stat-badge stat-total">Total orders</span>
+      <span class="stat-badge" style="background:#e0e7ff;color:#3730a3">📦 Warehouses</span>
+    </div>
+    ${filterNoteHtml}
+  `;
+
+  suppliers.forEach((sup, idx) => {
+    const card = document.createElement("div");
+    card.className = "supplier-card";
+    card.innerHTML = `
+      <div class="supplier-rank">#${idx + 1}</div>
+      <div class="supplier-info">
+        <div class="supplier-name">${escHtml(sup.supplierName)}</div>
+        ${sup.supplierId ? `<div class="supplier-id">Supplier ID: ${escHtml(sup.supplierId)}</div>` : ""}
+        <div class="supplier-stats">
+          <span class="stat-badge stat-7d">7d: ${Number(sup.sold7d || 0).toLocaleString()}</span>
+          <span class="stat-badge stat-30d">30d: ${Number(sup.sold30d || 0).toLocaleString()}</span>
+          <span class="stat-badge stat-90d">90d: ${Number(sup.sold90d || 0).toLocaleString()}</span>
+          <span class="stat-badge stat-total">Total: ${Number(sup.totalSales || 0).toLocaleString()}</span>
+          ${!hasSales && sup.listedNum ? `<span class="stat-badge" style="background:#f5f5f5;color:#666">Listed: ${Number(sup.listedNum).toLocaleString()}</span>` : ""}
+        </div>
+        <div class="supplier-products-count">${sup.products.length} product(s) listed</div>
+        ${sup.warehouseCountries && sup.warehouseCountries.length ? `
+          <div class="supplier-warehouses">
+            <span class="wh-label">📦 Ships from:</span>
+            ${sup.warehouseCountries.slice(0, 8).map(w =>
+              `<span class="wh-tag" title="${w.qty} units in ${w.code}">${w.code} (${Number(w.qty).toLocaleString()})</span>`
+            ).join("")}
+            ${sup.warehouseCountries.length > 8
+              ? `<span class="wh-more">+${sup.warehouseCountries.length - 8} more</span>`
+              : ""}
+          </div>
+        ` : ""}
+      </div>
+      <div class="supplier-expand">▸ View details</div>
+    `;
+    container.appendChild(card);
+
+    // ── Expandable detail panel ──
+    const detail = document.createElement("div");
+    detail.className = "supplier-detail hidden";
+    detail.id = `supplier-detail-${idx}`;
+
+    // Top products by sales
+    const topProducts = sup.topProducts && sup.topProducts.length
+      ? sup.topProducts
+      : sup.products
+          .filter((p) => p.sales && Number(p.sales.totalSales) > 0)
+          .sort((a, b) => Number(b.sales?.totalSales || 0) - Number(a.sales?.totalSales || 0))
+          .slice(0, 5)
+          .map((p) => ({
+            id: p.id,
+            name: p.name,
+            image: p.image,
+            cjCost: p.cjCost,
+            currency: p.currency,
+            totalSales: Number(p.sales?.totalSales) || 0,
+            sold7d: Number(p.sales?.sold7d) || 0,
+            sold30d: Number(p.sales?.sold30d) || 0,
+            sold90d: Number(p.sales?.sold90d) || 0,
+            listedNum: Number(p.listedNum) || 0,
+            daysSinceListing: p.sales?.daysSinceListing ?? null,
+            createrTime: p.sales?.createrTime ?? null,
+            supplierName: p.supplierName,
+            supplierId: p.supplierId
+          }));
+
+    if (topProducts.length) {
+      const topHeader = document.createElement("div");
+      topHeader.className = "supplier-detail-header";
+      topHeader.textContent = `🔥 Top ${topProducts.length} selling product(s)`;
+      detail.appendChild(topHeader);
+
+      topProducts.forEach((tp) => {
+        const row = document.createElement("div");
+        row.className = "supplier-product-row";
+        row.innerHTML = `
+          <img src="${tp.image || ""}" alt="" class="supplier-product-img" onerror="this.style.display='none'">
+          <div class="supplier-product-info">
+            <div class="supplier-product-name">${escHtml(tp.name || "Untitled")}</div>
+            <div class="supplier-product-meta">
+              <span>CJ cost: ${tp.currency || "USD"} ${Number(tp.cjCost || 0).toFixed(2)}</span>
+              <span>· 🏪 Listed by ${Number(tp.listedNum || 0).toLocaleString()} sellers</span>
+              ${tp.daysSinceListing !== null && tp.daysSinceListing !== undefined
+                ? `<span>· 📅 ${formatListingAge(tp.daysSinceListing, tp.createrTime)}</span>`
+                : ""}
+            </div>
+          </div>
+          <div class="supplier-product-sales">
+            <span class="stat-badge stat-7d">${Number(tp.sold7d || 0).toLocaleString()}</span>
+            <span class="stat-badge stat-30d">${Number(tp.sold30d || 0).toLocaleString()}</span>
+            <span class="stat-badge stat-90d">${Number(tp.sold90d || 0).toLocaleString()}</span>
+            <span class="stat-badge stat-total">${Number(tp.totalSales || 0).toLocaleString()}</span>
+          </div>
+        `;
+        row.addEventListener("click", () => {
+          if (tp.id) openDetail(tp.id);
+        });
+        detail.appendChild(row);
+      });
+    } else {
+      const empty = document.createElement("div");
+      empty.className = "supplier-detail-empty";
+      empty.textContent = "No sales data available for individual products.";
+      detail.appendChild(empty);
+    }
+
+    card.addEventListener("click", () => {
+      detail.classList.toggle("hidden");
+      card.querySelector(".supplier-expand").textContent = detail.classList.contains("hidden")
+        ? "▸ View details"
+        : "▾ Hide details";
+    });
+    container.appendChild(detail);
+  });
+
+  resultsEl.appendChild(container);
+}
+
+function escHtml(str) {
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 if (resetFiltersButton) {
   resetFiltersButton.addEventListener("click", () => {
-    ["#fMinPrice", "#fMaxPrice", "#fMinStock"].forEach((id) => {
+    ["#fMinPrice", "#fMaxPrice", "#fMinStock", "#fMaxStock", "#fMinListed", "#fMaxListed"].forEach((id) => {
       const el = document.querySelector(id);
       if (el) el.value = "";
     });
@@ -1266,13 +1675,22 @@ if (openWindowButton) {
 async function init() {
   setStatus("Checking your account…", "warn");
 
-  // Optional one-off backend override (useful before the URL is baked in).
+  // Optional one-off backend override. Only honoured for a real https URL —
+  // a stale localhost value in storage would break the extension ("Failed to fetch").
   try {
     const { apiBase } = await chrome.storage.local.get(["apiBase"]);
-    if (apiBase) API_BASE = String(apiBase).replace(/\/+$/, "");
+    if (apiBase) {
+      const candidate = String(apiBase).replace(/\/+$/, "");
+      if (/^https:\/\//i.test(candidate)) {
+        API_BASE = candidate;
+      }
+    }
   } catch {
     /* storage unavailable */
   }
+
+  // Always ensure we connect to the live backend, not localhost.
+  API_BASE = DEFAULT_API_BASE;
 
   let saved = {};
   try {
@@ -1416,3 +1834,35 @@ if (cjKeyRemoveBtn) {
     postCjKey("", "Removing the saved key…", "Saved key removed ✓");
   });
 }
+
+/* ── Theme (light / dark) ─────────────────────────────────── */
+const THEME_KEY = "cjTheme";
+function getPreferredTheme() {
+  try {
+    const stored = localStorage.getItem(THEME_KEY);
+    if (stored === "dark" || stored === "light") return stored;
+  } catch {}
+  try {
+    const { [THEME_KEY]: stored } = chrome.storage.local.get([THEME_KEY]) || {};
+    if (stored === "dark" || stored === "light") return stored;
+  } catch {}
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+function setTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  try { localStorage.setItem(THEME_KEY, theme); } catch {}
+  try { chrome.storage.local.set({ [THEME_KEY]: theme }); } catch {}
+  if (themeToggle) themeToggle.textContent = theme === "dark" ? "☀️" : "🌙";
+}
+if (themeToggle) {
+  themeToggle.addEventListener("click", () => {
+    const next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    setTheme(next);
+  });
+}
+// Apply on load (before DOM is fully painted)
+(function() {
+  const t = getPreferredTheme();
+  document.documentElement.setAttribute("data-theme", t);
+  if (themeToggle) themeToggle.textContent = t === "dark" ? "☀️" : "🌙";
+})();

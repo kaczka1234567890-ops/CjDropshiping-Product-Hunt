@@ -26,6 +26,6 @@
   "permissions": ["storage", "sidePanel"],
   "host_permissions": [
     "http://localhost:3000/*",
-    "https://YOUR-PROJECT.vercel.app/*"
+    "https://cj-winning-product-hunter-poc.vercel.app/*"
   ]
 }

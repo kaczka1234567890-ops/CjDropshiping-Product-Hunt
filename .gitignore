@@ -9,3 +9,4 @@ server.log
 store-assets/screenshots/
 store-assets/harness/
 .vercel/
+.vercel

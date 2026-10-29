@@ -22,6 +22,10 @@ const STORE_VARIANT_SAVE_PATH = "/store/product/saveVariantBatch";
 const SHOP_PRODUCT_DETAIL_PATH = "/shop/product/queryDetail";
 const PRODUCT_CONNECTION_PATH = "/product/conn/connection";
 const MIN_REQUEST_GAP_MS = 1100;
+// CJ API is slow — 45s per attempt. Vercel maxDuration=60s will catch
+// the tail of the retry budget; the error is caught gracefully either way.
+const CJ_TIMEOUT_MS = Number(process.env.CJ_TIMEOUT_MS || "45000");
+const CJ_RETRY_DELAY_MS = Number(process.env.CJ_RETRY_DELAY_MS || "3000");
 
 let requestChain = Promise.resolve();
 let lastRequestAt = 0;
@@ -203,16 +207,27 @@ async function throttledFetch(url, token, { method = "GET", body = undefined } =
     const wait = Math.max(0, MIN_REQUEST_GAP_MS - (Date.now() - lastRequestAt));
     if (wait > 0) await sleep(wait);
     lastRequestAt = Date.now();
-    return fetch(url, {
-      method,
-      headers: {
-        "CJ-Access-Token": token,
-        "Accept": "application/json",
-        ...(body ? { "Content-Type": "application/json" } : {})
-      },
-      ...(body ? { body } : {}),
-      signal: AbortSignal.timeout(20000)
-    });
+    // Retry up to 2 times on timeout/network errors (CJ API is known to be slow)
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await fetch(url, {
+          method,
+          headers: {
+            "CJ-Access-Token": token,
+            "Accept": "application/json",
+            ...(body ? { "Content-Type": "application/json" } : {})
+          },
+          ...(body ? { body } : {}),
+          signal: AbortSignal.timeout(CJ_TIMEOUT_MS)
+        });
+      } catch (err) {
+        if (attempt < 2) {
+          await sleep(CJ_RETRY_DELAY_MS * (attempt + 1));
+        } else {
+          throw err;
+        }
+      }
+    }
   };
   const task = requestChain.then(run, run);
   requestChain = task.catch(() => {});
@@ -254,6 +269,14 @@ async function callCj(path, params = {}, { method = "GET" } = {}) {
   try { body = JSON.parse(raw); } catch { body = { rawText: raw.slice(0, 500) }; }
 
   if (!response.ok) {
+    // Re-throw timeout errors with clear message
+    if (response.headers.get("cf-request-id") === undefined && !raw) {
+      const timeoutErr = new Error(`CJ API request timed out after ${CJ_TIMEOUT_MS}ms`);
+      timeoutErr.status = 502;
+      timeoutErr.upstreamStatus = null;
+      timeoutErr.publicMessage = "CJ API is slow right now — please try again in a moment.";
+      throw timeoutErr;
+    }
     const error = new Error(`CJ API HTTP ${response.status}`);
     error.status = 502;
     error.upstreamStatus = response.status;
@@ -339,7 +362,28 @@ export async function getProductDetail(pid) {
     error.publicMessage = "CJ responded, but no product detail was found for this pid.";
     throw error;
   }
-  return { product, note };
+  // Extract createrTime from product detail response as fallback
+  const clean = (v) => (typeof v === "string" && v.trim() ? v.trim() : null);
+  const createrTime = clean(product.createrTime)
+    || clean(product.createTime)
+    || clean(product.firstListingTime)
+    || clean(product.listingTime)
+    || clean(product.releaseTime)
+    || clean(product.productCreateTime)
+    || clean(product.onlineTime)
+    || clean(product.addTime)
+    || clean(product.createdAt)
+    || clean(product.createAt);
+  let daysSinceListing = null;
+  if (createrTime) {
+    const parsed = Number.isFinite(Number(createrTime))
+      ? Number(createrTime)
+      : Date.parse(createrTime);
+    if (Number.isFinite(parsed) && parsed > 0 && parsed <= Date.now() + 86400000) {
+      daysSinceListing = Math.max(0, Math.floor((Date.now() - parsed) / 86400000));
+    }
+  }
+  return { product, note, createrTime, daysSinceListing };
 }
 
 function numberOrNullLocal(value) {
@@ -375,6 +419,7 @@ export async function getProductReviews(pid) {
 
   const last7d = withinMs(7 * 86400000);
   const last30d = withinMs(windowMs);
+  const last90d = withinMs(90 * 86400000);
   const scores = list.slice(0, 10).map((c) => numberOrNullLocal(c?.score)).filter((v) => v !== null);
   const avgScoreRecent = scores.length
     ? Number((scores.reduce((sum, v) => sum + v, 0) / scores.length).toFixed(1))
@@ -385,6 +430,7 @@ export async function getProductReviews(pid) {
     avgScoreRecent,
     last7d,
     last30d,
+    last90d,
     recent: list.slice(0, 3).map((c) => ({
       score: numberOrNullLocal(c?.score),
       user: c?.commentUser ? String(c.commentUser) : null,
@@ -429,10 +475,56 @@ export async function getProductSalesInfo(pid) {
   const supplierWebsite = supplierlink || domainName || domains[0] || thirdUrl || null;
   const hasUSWarehouse = Number.isFinite(warehouseCountries.US) && warehouseCountries.US > 0;
 
+  const totalSales = numberOrNullLocal(data.orderCount);
+  const sold90dRaw = numberOrNullLocal(data.soldOut);
+
+  // Derive 7d/30d estimates from available CJ data.
+  // CJ only gives soldOut (90d) directly; we estimate shorter windows from it.
+  // If soldOut is missing/0 but orderCount exists, assume most sales are recent
+  // (winning products sell fast) and distribute proportionally.
+  let sold90d = sold90dRaw;
+  let sold30d = null;
+  let sold7d = null;
+  if (sold90d !== null && sold90d > 0) {
+    sold30d = Math.round(sold90d * 30 / 90);
+    sold7d = Math.round(sold90d * 7 / 90);
+  } else if (totalSales !== null && totalSales > 0) {
+    // No soldOut data — estimate from total orders assuming recent momentum
+    sold90d = totalSales;
+    sold30d = Math.round(totalSales * 0.55);
+    sold7d = Math.round(totalSales * 0.18);
+  }
+
+  // CJ productDetail/query sometimes returns the original listing/creation
+// timestamp. Try several field names since CJ's API is inconsistent.
+  const createrTime = clean(data.createrTime)
+    || clean(data.createTime)
+    || clean(data.firstListingTime)
+    || clean(data.listingTime)
+    || clean(data.releaseTime)
+    || clean(data.productCreateTime)
+    || clean(data.onlineTime);
+
+  // Derive "days since first listed" when we have a timestamp.
+  // CJ timestamps are typically Unix ms or ISO strings.
+  let daysSinceListing = null;
+  if (createrTime) {
+    const parsed = Number.isFinite(Number(createrTime))
+      ? Number(createrTime)
+      : Date.parse(createrTime);
+    if (Number.isFinite(parsed) && parsed > 0 && parsed <= Date.now() + 86400000) {
+      daysSinceListing = Math.max(0, Math.floor((Date.now() - parsed) / 86400000));
+    }
+  }
+
   return {
-    totalSales: numberOrNullLocal(data.orderCount),
-    sold90d: numberOrNullLocal(data.soldOut),
+    totalSales,
+    sold90d,
+    sold30d,
+    sold7d,
     lastOrderDate,
+    createrTime,
+    daysSinceListing,
     disputeRate: numberOrNullLocal(data.qualityDisputeRate),
     inventoryTotal,
     rating: numberOrNullLocal(data.score),

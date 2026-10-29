@@ -113,14 +113,18 @@ function fingerprint(key) {
 }
 
 // ── Auth middleware ──────────────────────────────────────
+// IMPORTANT: must use the *data* client (which has the service-role key) for
+// token verification. The auth-only client does NOT have the service-role key,
+// so `authSupabase.auth.getUser(token)` hits RLS on auth.users and returns
+// { user: null }, which the extension interprets as "invalid token".
 function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(401).json({ error: "Authentication required" });
   }
   const token = authHeader.slice(7);
-  // Verify JWT with Supabase
-  authSupabase.auth.getUser(token)
+  // Verify JWT with Supabase (service role bypasses RLS)
+  supabase.auth.getUser(token)
     .then(({ data }) => {
       if (!data?.user) return res.status(401).json({ error: "Invalid token" });
       req.user = data.user;
@@ -198,6 +202,28 @@ async function recordUsage(userId, endpoint, ipAddress, deviceId, responseCode) 
   }
 }
 
+// Track user heartbeat — updates last_seen and marks user as online
+async function recordHeartbeat(userId) {
+  try {
+    await supabase.from("profiles").update({
+      last_seen: new Date().toISOString(),
+      is_online: true
+    }).eq("id", userId);
+  } catch (err) {
+    console.warn("heartbeat failed:", err?.message || err);
+  }
+}
+
+// Clear is_online for users who haven't been seen in 5 minutes
+async function gcOnlineUsers() {
+  try {
+    const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    await supabase.from("profiles").update({ is_online: false }).lt("last_seen", cutoff);
+  } catch (err) {
+    console.warn("gc online failed:", err?.message || err);
+  }
+}
+
 function getDeviceId(req) {
   const forwarded = req.headers["x-forwarded-for"];
   const ip = forwarded ? forwarded.split(",")[0].trim() : req.socket.remoteAddress || "unknown";
@@ -225,7 +251,7 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
 app.use(express.json());
-app.use(express.static(path.join(projectRoot, "web")));
+app.use(express.static(path.join(projectRoot, "public")));
 
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -254,6 +280,70 @@ function rateLimited(key, max, windowMs) {
 function clientIp(req) {
   const forwarded = req.headers["x-forwarded-for"];
   return forwarded ? forwarded.split(",")[0].trim() : req.socket.remoteAddress || "unknown";
+}
+
+// ── Sales metrics (stock-snapshot based windows) ────────────
+// CJ has no public "sales in last N days" API. We estimate by recording
+// stock snapshots locally and computing the drop over 7/30/90-day windows.
+// When CJ provides 90-day sales (soldOut), we use that as the anchor.
+
+async function buildSalesMetrics(userId, pid, sales) {
+  const now = Date.now();
+  const dayKey = new Date(now).toISOString().slice(0, 10);
+
+  // Fetch current stock from sales data (inventoryTotal from productDetail)
+  const currentStock = sales?.inventoryTotal ?? null;
+
+  // Load previous snapshots
+  const { data: snapRows } = await supabase
+    .from("product_stock_snapshots")
+    .select("snapshot_date, stock")
+    .eq("user_id", userId)
+    .eq("cj_product_id", String(pid))
+    .order("snapshot_date", { ascending: false })
+    .limit(100);
+
+  const snaps = snapRows || [];
+
+  // Save today's snapshot if we have stock data
+  if (currentStock !== null) {
+    const existing = snaps.find(s => s.snapshot_date === dayKey);
+    if (!existing) {
+      await supabase.from("product_stock_snapshots").insert({
+        user_id: userId,
+        cj_product_id: String(pid),
+        snapshot_date: dayKey,
+        stock: currentStock
+      });
+    }
+  }
+
+  // Compute windowed stock drops
+  const windowStock = (days) => {
+    const cutoff = now - days * 86400000;
+    const oldSnap = snaps.find(s => new Date(s.snapshot_date).getTime() <= cutoff - 86400000);
+    if (!oldSnap || currentStock === null) return null;
+    return Math.max(0, oldSnap.stock - currentStock);
+  };
+
+  const w7 = windowStock(7);
+  const w30 = windowStock(30);
+  const w90 = windowStock(90);
+
+  // If CJ provides 90-day sales, use it to calibrate
+  const sold90 = sales && Number.isFinite(Number(sales.sold90d)) ? Number(sales.sold90d) : null;
+  const trackingSince = snaps.length ? snaps[snaps.length - 1].snapshot_date : dayKey;
+
+  return {
+    windows: {
+      d7: w7 !== null ? { stockChange: w7, source: "stock-snapshot" } : null,
+      d30: w30 !== null ? { stockChange: w30, source: "stock-snapshot" } : null,
+      d90: w90 !== null ? { stockChange: w90, source: "stock-snapshot" } : null
+    },
+    sold90d: sold90,
+    trackingSince,
+    currentStock
+  };
 }
 
 app.post("/api/auth/signup", async (req, res) => {
@@ -302,6 +392,16 @@ app.post("/api/auth/logout", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+// Heartbeat — mark user as online (called periodically by extension/web)
+app.post("/api/heartbeat", requireAuth, async (req, res) => {
+  try {
+    await recordHeartbeat(req.user.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err?.message || "Heartbeat failed." });
+  }
+});
+
 app.get("/api/auth/me", requireAuth, async (req, res) => {
   const [{ data: profile }, { data: policy }, { data: keyRow }, isAdmin] = await Promise.all([
     supabase.from("profiles").select("*").eq("id", req.user.id).maybeSingle(),
@@ -320,7 +420,9 @@ app.get("/api/auth/me", requireAuth, async (req, res) => {
     dailyUsed: policy?.daily_api_count ?? 0,
     monthlyUsed: policy?.monthly_api_count ?? 0,
     features: policy?.features || { search: true, listing: true, enrich: true },
-    hasCjKey: Boolean(keyRow)
+    hasCjKey: Boolean(keyRow),
+    isOnline: profile?.is_online || false,
+    lastSeen: profile?.last_seen || null
   });
 });
 
@@ -388,12 +490,27 @@ async function getUserApiKey(userId) {
 async function withCjKey(userId, res, handler) {
   const key = await getUserApiKey(userId);
   if (!key) {
-    return res.status(503).json({
-      error: "CJ API key not configured.",
-      detail: "Open ⚙ Settings in the extension and paste your CJdropshipping API Key."
+    throw Object.assign(new Error("CJ API key not configured."), {
+      status: 503,
+      publicMessage: "Open ⚙ Settings in the extension and paste your CJdropshipping API Key."
     });
   }
-  return runWithApiKey(key, handler);
+  // Hard timeout guard: CJ is slow. Race the handler against a 50s timer;
+  // if it fires, throw a 504 (caught by the route's outer catch, which
+  // preserves error.status). This prevents Vercel's 60s kill from returning
+  // an unhelpful FUNCTION_INVOCATION_TIMEOUT with no JSON body.
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => {
+      const err = new Error("CJ request timed out — too many products to fetch. Try a narrower keyword or fewer products.");
+      err.status = 504;
+      err.publicMessage = err.message;
+      reject(err);
+    }, 50000)
+  );
+  return Promise.race([
+    runWithApiKey(key, handler),
+    timeoutPromise
+  ]);
 }
 
 app.get("/api/products", requireAuth, async (req, res) => {
@@ -421,6 +538,9 @@ app.get("/api/products", requireAuth, async (req, res) => {
       const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(req.query.pageSize || req.query.limit || "20"), 10) || 20));
       const freeShipping = String(req.query.freeShipping || "") === "1";
       const minStock = req.query.minStock !== undefined ? Number(req.query.minStock) : undefined;
+      const maxStock = req.query.maxStock !== undefined ? Number(req.query.maxStock) : undefined;
+      const minListed = req.query.minListed !== undefined ? Number(req.query.minListed) : undefined;
+      const maxListed = req.query.maxListed !== undefined ? Number(req.query.maxListed) : undefined;
       const minPrice = req.query.minPrice !== undefined ? Number(req.query.minPrice) : undefined;
       const maxPrice = req.query.maxPrice !== undefined ? Number(req.query.maxPrice) : undefined;
       const quickMark = Boolean(quick && effectiveCountry && String(effectiveCountry).toUpperCase() !== "CN");
@@ -429,7 +549,18 @@ app.get("/api/products", requireAuth, async (req, res) => {
         query, page, pageSize, trending, freeShipping, minStock, minPrice, maxPrice,
         countryCode: effectiveCountry, orderBy: sort === "listed_desc" ? 1 : undefined, sort: "desc"
       });
-      const products = sortProducts(result.products.map(analyzeProduct), sort);
+      let products = sortProducts(result.products.map(analyzeProduct), sort);
+      // Filter by min/max listings (number of sellers who listed this product)
+      // CJ doesn't support this server-side, so we filter client-side
+      if (minListed !== undefined && minListed !== null && Number.isFinite(minListed) && minListed > 0) {
+        products = products.filter((p) => (Number(p.listedNum) || 0) >= minListed);
+      }
+      if (maxListed !== undefined && maxListed !== null && Number.isFinite(maxListed) && maxListed > 0) {
+        products = products.filter((p) => (Number(p.listedNum) || 0) <= maxListed);
+      }
+      if (maxStock !== undefined && maxStock !== null && Number.isFinite(maxStock) && maxStock > 0) {
+        products = products.filter((p) => (Number(p.stock) || 0) <= maxStock);
+      }
       if (quickMark) {
         products.forEach((p) => {
           if (!p.quickDelivery) { p.quickDelivery = true; }
@@ -462,24 +593,310 @@ app.get("/api/products", requireAuth, async (req, res) => {
   }
 });
 
+// ── Supplier best-sellers aggregation ─────────────────
+app.get("/api/suppliers/best-sellers", requireAuth, async (req, res) => {
+  const deviceId = getDeviceId(req);
+  const access = await checkAccess(req.user.id, deviceId);
+  if (!access.allowed) return res.status(403).json({ error: access.reason });
+  await registerDevice(req.user.id, deviceId, req.headers["user-agent"], req.ip);
+
+  const query = String(req.query.q || "").trim();
+  const sortBy = String(req.query.sortBy || "90d"); // 7d | 30d | 90d
+  // Best-sellers needs per-product sales calls (CJ is slow) — cap low
+      // to stay under Vercel's 60s budget. 15 products × ~5s / 3 concurrent ≈ 25s.
+      const pageSize = Math.min(30, Math.max(1, Number(req.query.pageSize || 15) || 15));
+  const filterCountry = String(req.query.country || "").trim().toUpperCase(); // e.g. "US", "GB"
+
+  try {
+    const result = await withCjKey(req.user.id, res, async () => {
+      // Hard deadline: CJ is slow. If we exceed 48s, return partial results
+      // rather than letting Vercel kill the function at 60s with nothing.
+      const deadline = Date.now() + 48000;
+
+      // Search products
+      let products = [];
+      try {
+        const searchResult = await searchProducts({
+          query: query || undefined,
+          page: 1,
+          pageSize
+        });
+        products = searchResult.products || [];
+      } catch (searchErr) {
+        console.warn("Best sellers: searchProducts failed:", searchErr?.message);
+        return { suppliers: [], total: 0, searchError: searchErr?.publicMessage || searchErr?.message };
+      }
+      if (!products.length) return { suppliers: [], total: 0 };
+
+      // Fetch sales data per product in parallel batches (CJ is slow —
+      // sequential 50×2 calls would blow the 60s Vercel budget).
+      const CONCURRENCY = 3;
+      const analyzed = products.map((p) => analyzeProduct(p));
+      const enriched = [];
+      for (let i = 0; i < analyzed.length; i += CONCURRENCY) {
+        if (Date.now() > deadline) break;
+        const batch = analyzed.slice(i, i + CONCURRENCY);
+        const results = await Promise.allSettled(
+          batch.map(async (a) => {
+            let sales = null;
+            try { sales = await getProductSalesInfo(a.id); } catch (e) { /* skip */ }
+            return { product: a, sales, reviews: null };
+          })
+        );
+        for (const r of results) {
+          if (r.status === "fulfilled") enriched.push(r.value);
+        }
+      }
+
+      // Aggregate by supplier
+      const supplierMap = new Map();
+      for (const { product, sales, reviews } of enriched) {
+        // Determine supplier key — try multiple sources for better names
+        const rawName = product.supplierName || "";
+        const rawId = product.supplierId || "";
+        const salesShopName = sales?.shopName || "";
+        const salesSupplierEn = sales?.supplierNameEn || "";
+
+        // Priority: CJ shop name from sales data > supplierName > supplierId > unknown
+        let displayName = rawName;
+        let displayId = rawId;
+        let key = rawName || rawId;
+
+        if (!displayName && salesShopName) {
+          displayName = salesShopName;
+          key = salesShopName;
+        } else if (!displayName && salesSupplierEn) {
+          displayName = salesSupplierEn;
+          key = salesSupplierEn;
+        } else if (!key) {
+          // No name/id found at all — use a placeholder based on product ID
+          displayName = product.id ? `Product ${product.id}` : "Unknown Supplier";
+          key = displayName;
+        }
+
+        const entry = supplierMap.get(key);
+        if (!entry) {
+          supplierMap.set(key, {
+            supplierName: displayName,
+            supplierId: displayId || null,
+            products: [],
+            sold7d: 0, sold30d: 0, sold90d: 0,
+            totalSales: 0,
+            listedNum: 0,
+            topProducts: [],
+            warehouseCountries: {} // { US: 1234, GB: 567, ... }
+          });
+        }
+        const sup = supplierMap.get(key);
+        const productWithSales = { ...product, sales, reviews };
+        sup.products.push(productWithSales);
+        // Use listedNum as fallback when sales data is unavailable
+        sup.listedNum += Number(product.listedNum) || 0;
+        if (sales) {
+          sup.sold7d += Number(sales.sold7d) || 0;
+          sup.sold30d += Number(sales.sold30d) || 0;
+          sup.sold90d += Number(sales.sold90d) || 0;
+          sup.totalSales += Number(sales.totalSales) || 0;
+          // Collect warehouse countries across all products
+          if (sales.warehouseCountries) {
+            for (const [cc, qty] of Object.entries(sales.warehouseCountries)) {
+              sup.warehouseCountries[cc] = (sup.warehouseCountries[cc] || 0) + Number(qty);
+            }
+          }
+          // Track top-selling products for this supplier
+          sup.topProducts.push({
+            id: product.id,
+            name: product.name,
+            image: product.image,
+            cjCost: product.cjCost,
+            currency: product.currency,
+            totalSales: Number(sales.totalSales) || 0,
+            sold7d: Number(sales.sold7d) || 0,
+            sold30d: Number(sales.sold30d) || 0,
+            sold90d: Number(sales.sold90d) || 0,
+            listedNum: Number(product.listedNum) || 0,
+            createrTime: sales?.createrTime ?? null,
+            daysSinceListing: sales?.daysSinceListing ?? null,
+            supplierName: displayName,
+            supplierId: displayId || null
+          });
+        }
+      }
+
+      // Sort top products within each supplier by totalSales
+      for (const sup of supplierMap.values()) {
+        sup.topProducts.sort((a, b) => b.totalSales - a.totalSales);
+        sup.topProducts = sup.topProducts.slice(0, 5); // keep top 5
+      }
+
+      // Sort suppliers — prioritize totalSales (CJ orderCount), then listedNum
+      const rawSuppliers = [...supplierMap.values()].sort((a, b) => {
+        const ta = a.totalSales || 0;
+        const tb = b.totalSales || 0;
+        if (ta || tb) return tb - ta;
+        return (b.listedNum || 0) - (a.listedNum || 0);
+      });
+
+      // Convert warehouseCountries object to sorted array for frontend
+      const suppliers = rawSuppliers.map((s) => ({
+        ...s,
+        warehouseCountries: Object.entries(s.warehouseCountries)
+          .map(([code, qty]) => ({ code, qty }))
+          .sort((a, b) => b.qty - a.qty)
+          .slice(0, 20) // top 20 shipping countries
+      }));
+
+      // Filter by country if requested
+      let filteredSuppliers = suppliers;
+      if (filterCountry) {
+        filteredSuppliers = suppliers.filter((s) => {
+          const hasCountry = s.warehouseCountries.some((w) => w.code === filterCountry);
+          return hasCountry;
+        });
+        if (!filteredSuppliers.length) {
+          // No supplier has this country — return all with a note
+          return {
+            suppliers: [],
+            sortBy,
+            total: 0,
+            searchQuery: query,
+            filterCountry,
+            filterNote: `No suppliers found with inventory in ${filterCountry}. Showing all suppliers instead.`
+          };
+        }
+      }
+
+      return { suppliers: filteredSuppliers, sortBy, total: filteredSuppliers.length, searchQuery: query, filterCountry };
+    });
+
+    recordUsage(req.user.id, "/api/suppliers/best-sellers", req.ip, deviceId, 200);
+    res.json(result);
+  } catch (error) {
+    recordUsage(req.user.id, "/api/suppliers/best-sellers", req.ip, deviceId, error.status || 502);
+    console.error("Best sellers failed:", error.message);
+    res.status(error.status || 502).json({
+      error: "Could not retrieve best sellers.",
+      detail: error.publicMessage || error.message
+    });
+  }
+});
+
+// Profit calculation endpoint — estimate potential profit for a product
+app.post("/api/products/:pid/calculate", requireAuth, async (req, res) => {
+  const deviceId = getDeviceId(req);
+  const access = await checkAccess(req.user.id, deviceId);
+  if (!access.allowed) return res.status(403).json({ error: access.reason });
+  await registerDevice(req.user.id, deviceId, req.headers["user-agent"], req.ip);
+
+  const pid = String(req.params.pid || "").trim();
+  if (!pid) return res.status(400).json({ error: "Product id required." });
+
+  const { margin = 0.3, shipping = 5, admission = 2, platform = 0.15 } = req.body;
+
+  try {
+    const result = await withCjKey(req.user.id, res, async () => {
+      const { product, note, createrTime: detailCreaterTime, daysSinceListing: detailDaysSinceListing } = await getProductDetail(pid);
+      const analyzed = analyzeProduct(product);
+      let sales = null;
+      try { sales = await getProductSalesInfo(analyzed.id || pid); } catch (e) { console.warn("Sales unavailable:", e.message); }
+
+      // Merge enrichment data
+      const enrich = enrichMap[pid] || {};
+      const en = {
+        ...enrich,
+        createrTime: sales?.createrTime ?? detailCreaterTime ?? enrich.createrTime,
+        daysSinceListing: sales?.daysSinceListing ?? detailDaysSinceListing ?? enrich.daysSinceListing
+      };
+
+      // Calculate estimates
+      const totalSales = Number(sales?.totalSales) || Number(en.totalSales) || 0;
+      const sold90d = Number(sales?.sold90d) || Number(en.sold90d) || 0;
+      const sold30d = Number(sales?.sold30d) || Number(en.sold30d) || 0;
+      const sold7d = Number(sales?.sold7d) || Number(en.sold7d) || 0;
+
+      // Daily/monthly estimates
+      let dailyEst = null, monthlyEst = null;
+      if (sold90d > 0) {
+        dailyEst = Math.round(sold90d / 90);
+        monthlyEst = Math.round(sold90d * 30 / 90);
+      } else if (totalSales > 0) {
+        dailyEst = Math.round(totalSales * 0.06);
+        monthlyEst = Math.round(totalSales * 0.55);
+      }
+
+      // Revenue calculation
+      const cjCost = Number(product?.cjCost) || 0;
+      const sellPrice = Number(product?.suggestSellPrice) || Number(product?.cjCost) * 1.5 || 0;
+      const revenue = sellPrice * (dailyEst * 30 || totalSales || 100);
+
+      // Cost calculation
+      const shippingCost = shipping * (dailyEst * 30 || 1); // assume 30 days
+      const admissionCost = admission; // one-time platform fee
+      const platformCost = revenue * platform; // percentage platform fee
+      const totalCost = shippingCost + admissionCost + platformCost;
+
+      // Profit calculation
+      const grossProfit = revenue - (cjCost * (dailyEst * 30 || totalSales || 100));
+      const netProfit = grossProfit - totalCost;
+      const profitMargin = revenue > 0 ? (netProfit / revenue) * 100 : 0;
+
+      return {
+        product: analyzed,
+        estimates: {
+          daily: dailyEst,
+          monthly: monthlyEst,
+          yearly: (dailyEst * 365) || null
+        },
+        financials: {
+          cjCost,
+          suggestedSellPrice: sellPrice,
+          estimatedRevenue: revenue,
+          shippingCost,
+          admissionCost,
+          platformCost,
+          totalCost,
+          grossProfit,
+          netProfit,
+          profitMargin: Math.round(profitMargin * 100) / 100
+        },
+        notes: {
+          revenueNote: revenue ? `Based on ${dailyEst ? "estimated" : "actual"} sales` : "Revenue estimate unavailable",
+          costNote: "Shipping based on US mainland, platform fee = 15% of revenue"
+        }
+      };
+    });
+
+    recordUsage(req.user.id, "/api/products/:pid/calculate", req.ip, deviceId, 200);
+    res.json(result);
+  } catch (error) {
+    recordUsage(req.user.id, "/api/products/:pid/calculate", req.ip, deviceId, error.status || 502);
+    res.status(error.status || 502).json({ error: "Could not calculate profit.", detail: error.message });
+  }
+});
+
 app.get("/api/products/:pid", requireAuth, async (req, res) => {
   const deviceId = getDeviceId(req);
   const access = await checkAccess(req.user.id, deviceId);
   if (!access.allowed) return res.status(403).json({ error: access.reason });
   await registerDevice(req.user.id, deviceId, req.headers["user-agent"], req.ip);
-  
+
   const pid = String(req.params.pid || "").trim();
   if (!pid) return res.status(400).json({ error: "Product id required." });
 
   try {
     const result = await withCjKey(req.user.id, res, async () => {
-      const { product, note } = await getProductDetail(pid);
+      const { product, note, createrTime: detailCreaterTime, daysSinceListing: detailDaysSinceListing } = await getProductDetail(pid);
       const analyzed = analyzeProduct(product);
-      let reviews = null;
-      try { reviews = await getProductReviews(analyzed.id || pid); } catch (e) { console.warn("Reviews unavailable:", e.message); }
       let sales = null;
       try { sales = await getProductSalesInfo(analyzed.id || pid); } catch (e) { console.warn("Sales unavailable:", e.message); }
-      return { product: analyzed, reviews, sales, note };
+      let reviews = null;
+      try { reviews = await getProductReviews(analyzed.id || pid); } catch (e) { console.warn("Reviews unavailable:", e.message); }
+      const metrics = await buildSalesMetrics(req.user.id, analyzed.id || pid, sales);
+      // Merge createrTime/daysSinceListing from product detail as fallback
+      const salesWithDetailTime = sales || {};
+      if (detailCreaterTime && !salesWithDetailTime.createrTime) salesWithDetailTime.createrTime = detailCreaterTime;
+      if (detailDaysSinceListing !== null && salesWithDetailTime.daysSinceListing === null) salesWithDetailTime.daysSinceListing = detailDaysSinceListing;
+      return { product: analyzed, reviews, sales: salesWithDetailTime, metrics, note };
     });
 
     recordUsage(req.user.id, "/api/products/:pid", req.ip, deviceId, 200);
@@ -502,20 +919,57 @@ app.get("/api/enrich", requireAuth, async (req, res) => {
 
   try {
     const result = await withCjKey(req.user.id, res, async () => {
+      // Fetch sales + reviews + product detail in parallel batches
       const items = {};
-      for (const id of unique) {
-        let sales = null, lite = null;
-        try { sales = await getProductSalesInfo(id); } catch (e) { console.warn("Enrich sales failed:", e.message); }
-        try { lite = await getProductReviewsLite(id); } catch (e) { console.warn("Enrich reviews failed:", e.message); }
-        if (sales || lite) {
-          items[id] = {
-            totalSales: sales?.totalSales ?? null,
-            sold90d: sales?.sold90d ?? null,
-            lastOrderDate: sales?.lastOrderDate ?? null,
-            rating: lite?.avgScore ?? sales?.rating ?? null,
-            reviewTotal: lite?.total ?? sales?.commentCount ?? null,
-            createrTime: null
-          };
+      const CONCURRENCY = 3;
+      const deadline = Date.now() + 48000;
+      for (let i = 0; i < unique.length; i += CONCURRENCY) {
+        if (Date.now() > deadline) break;
+        const batch = unique.slice(i, i + CONCURRENCY);
+        const results = await Promise.allSettled(
+          batch.map(async (id) => {
+            let sales = null, lite = null, detail = null;
+            try { sales = await getProductSalesInfo(id); } catch (e) { console.warn("Enrich sales failed:", e.message); }
+            try { lite = await getProductReviewsLite(id); } catch (e) { console.warn("Enrich reviews failed:", e.message); }
+            try { detail = await getProductDetail(id); } catch (e) { console.warn("Enrich detail failed:", e.message); }
+            if (!sales && !lite && !detail) return null;
+            const totalSales = sales?.totalSales ?? null;
+            const sold90d = sales?.sold90d ?? null;
+            const sold30d = sales?.sold30d ?? null;
+            const sold7d = sales?.sold7d ?? null;
+            let dailyEst = null;
+            let monthlyEst = null;
+            if (sold90d !== null && sold90d > 0) {
+              monthlyEst = Math.round(sold90d * 30 / 90);
+              dailyEst = Math.round(sold90d / 90);
+            } else if (totalSales !== null && totalSales > 0) {
+              monthlyEst = Math.round(totalSales * 0.55);
+              dailyEst = Math.round(totalSales * 0.06);
+            }
+            // Merge createrTime/daysSinceListing from product detail as fallback
+            const detailCreaterTime = detail?.createrTime ?? null;
+            const detailDaysSinceListing = detail?.daysSinceListing ?? null;
+            return {
+              id,
+              totalSales,
+              sold90d,
+              sold30d,
+              sold7d,
+              dailyEst,
+              monthlyEst,
+              lastOrderDate: sales?.lastOrderDate ?? null,
+              createrTime: sales?.createrTime ?? detailCreaterTime,
+              daysSinceListing: sales?.daysSinceListing ?? detailDaysSinceListing,
+              rating: lite?.avgScore ?? sales?.rating ?? null,
+              reviewTotal: lite?.total ?? sales?.commentCount ?? null,
+              isNewListing: sales?.isNewListing ?? null,
+              isNewProduct: sales?.isNewProduct ?? null,
+              isRelisting: sales?.isRelisting ?? null
+            };
+          })
+        );
+        for (const r of results) {
+          if (r.status === "fulfilled" && r.value) items[r.value.id] = r.value;
         }
       }
       return { items };
@@ -525,7 +979,7 @@ app.get("/api/enrich", requireAuth, async (req, res) => {
     res.json(result);
   } catch (error) {
     recordUsage(req.user.id, "/api/enrich", req.ip, deviceId, error.status || 502);
-    res.status(502).json({ error: "Enrich failed.", detail: error.message });
+    res.status(error.status || 502).json({ error: "Enrich failed.", detail: error.message });
   }
 });
 
@@ -692,7 +1146,7 @@ app.post("/api/profit", requireAuth, (req, res) => {
 // ── Admin endpoints ─────────────────────────────────────
 app.get("/api/admin/users", requireAuth, requireAdmin, async (req, res) => {
   const [{ data: profiles }, { data: policies }, { data: deviceRows }, { data: keyRows }] = await Promise.all([
-    supabase.from("profiles").select("id, email, full_name, created_at, updated_at, is_admin"),
+    supabase.from("profiles").select("id, email, full_name, created_at, updated_at, is_admin, is_online, last_seen"),
     supabase.from("admin_policies").select("*"),
     supabase.from("user_devices").select("user_id, device_id, user_agent, ip_address, is_blocked, last_seen"),
     supabase.from("user_api_keys").select("user_id, key_fingerprint")
@@ -713,6 +1167,40 @@ app.get("/api/admin/users", requireAuth, requireAdmin, async (req, res) => {
     devices: deviceMap[p.id] || []
   }));
   res.json({ users });
+});
+
+// Admin: active/online users count
+app.get("/api/admin/active-users", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    // GC stale first
+    await gcOnlineUsers();
+    const { count: onlineCount, error: onlineErr } = await supabase
+      .from("profiles")
+      .select("*", { count: "exact", head: true })
+      .eq("is_online", true);
+    if (onlineErr) return res.status(500).json({ error: onlineErr.message });
+
+    const { count: totalCount, error: totalErr } = await supabase
+      .from("profiles")
+      .select("*", { count: "exact", head: true });
+    if (totalErr) return res.status(500).json({ error: totalErr.message });
+
+    // Users active in last 24h
+    const cutoff24 = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { count: active24h } = await supabase
+      .from("profiles")
+      .select("*", { count: "exact", head: true })
+      .gte("last_seen", cutoff24);
+
+    res.json({
+      online: onlineCount || 0,
+      total: totalCount || 0,
+      active24h: active24h || 0,
+      checkedAt: new Date().toISOString()
+    });
+  } catch (err) {
+    res.status(500).json({ error: err?.message || "Failed to fetch active users." });
+  }
 });
 
 app.post("/api/admin/users/:userId/block", requireAuth, requireAdmin, async (req, res) => {
@@ -769,6 +1257,62 @@ app.post("/api/admin/users/:userId/features", requireAuth, requireAdmin, async (
   res.json({ ok: true });
 });
 
+// Admin: reset/change any user's password
+app.post("/api/admin/users/:userId/reset-password", requireAuth, requireAdmin, async (req, res) => {
+  const { userId } = req.params;
+  const { password } = req.body || {};
+  if (!password || typeof password !== "string" || password.length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters." });
+  }
+  try {
+    const { error } = await authSupabase.auth.admin.updateUserById(userId, { password });
+    if (error) return res.status(500).json({ error: error.message });
+    await supabase.from("admin_audit_log").insert({
+      admin_id: req.user.id, action: "reset_password",
+      target_user_id: userId, details: { by: req.user.email }
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err?.message || "Password reset failed." });
+  }
+});
+
+// Admin: bootstrap — promote first user to admin when no admins exist yet
+app.post("/api/admin/bootstrap", requireAuth, async (req, res) => {
+  try {
+    const { count, error: countErr } = await supabase
+      .from("profiles")
+      .select("*", { count: "exact", head: true })
+      .eq("is_admin", true);
+    if (countErr) return res.status(500).json({ error: countErr.message });
+    if (count && count > 0) {
+      return res.status(403).json({ error: "An admin already exists. Bootstrap is no longer available." });
+    }
+    const { error } = await supabase.from("profiles").update({ is_admin: true }).eq("id", req.user.id);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ ok: true, message: "You are now the first admin." });
+  } catch (err) {
+    res.status(500).json({ error: err?.message || "Bootstrap failed." });
+  }
+});
+
+// Admin: delete a user's CJ API key
+app.post("/api/admin/users/:userId/delete-key", requireAuth, requireAdmin, async (req, res) => {
+  const { userId } = req.params;
+  try {
+    const { error } = await supabase.from("user_api_keys").delete().eq("user_id", userId);
+    if (error) return res.status(500).json({ error: error.message });
+    clearTokenCache();
+    await supabase.from("admin_audit_log").insert({
+      admin_id: req.user.id, action: "delete_cj_key",
+      target_user_id: userId, details: { by: req.user.email }
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err?.message || "Delete failed." });
+  }
+});
+
 app.get("/api/admin/usage", requireAuth, requireAdmin, async (req, res) => {
   const page = Math.max(1, Number(req.query.page || 1));
   const limit = Math.min(200, Math.max(1, Number(req.query.limit || 50)));
@@ -816,8 +1360,10 @@ app.use("/api", (req, res) => {
 // ── SPA fallback (local dev; Vercel serves web/ directly) ─
 app.get("*", (req, res) => {
   const rel = req.path === "/" ? "index.html" : req.path.replace(/^\/+/, "");
-  const target = rel === "admin" || rel === "admin/" ? "admin.html" : rel;
-  const webRoot = path.join(projectRoot, "web");
+  const target = rel === "admin" || rel === "admin/" ? "admin.html"
+    : rel === "help" || rel === "help/" ? "help.html"
+    : rel;
+  const webRoot = path.join(projectRoot, "public");
   const full = path.resolve(webRoot, target);
   if (!full.startsWith(webRoot)) return res.status(404).send("Not found");
   res.sendFile(full, (err) => {

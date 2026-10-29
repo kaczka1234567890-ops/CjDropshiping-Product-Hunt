@@ -5,8 +5,8 @@
   "description": "CJdropshipping Winning Product Hunter — Cloud Edition",
   "type": "module",
   "scripts": {
-    "start": "node server/index.js",
-    "dev": "node --watch server/index.js",
+    "start": "node api/index.js",
+    "dev": "node --watch api/index.js",
     "set-url": "node scripts/set-backend-url.mjs"
   },
   "dependencies": {

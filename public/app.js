@@ -49,6 +49,33 @@ function updatePager() {
   pageInfo.style.display = hidden ? "none" : "";
 }
 
+function calculateProfit(p, en) {
+  const cjCost = Number(p?.cjCost) || 0;
+  const sellPrice = Number(p?.suggestSellPrice) || Number(p?.cjCost) * 1.5 || 0;
+  const totalSales = Number(en?.totalSales) || 0;
+  const dailyEst = Number(en?.dailyEst) || 0;
+  const revenue = sellPrice * (dailyEst * 30 || totalSales || 100);
+  const grossProfit = revenue - (cjCost * (dailyEst * 30 || totalSales || 100));
+  const netProfit = grossProfit - 5;
+  const margin = revenue > 0 ? Math.round(((netProfit / revenue) * 100) * 100) / 100 : 0;
+  return { revenue, grossProfit, netProfit, margin };
+}
+
+function profitHtml(p, en) {
+  const calc = calculateProfit(p, en);
+  if (!calc || !calc.margin) return "";
+  const revenue = "$" + calc.revenue.toFixed(2);
+  const profit = "$" + calc.netProfit.toFixed(2);
+  const margin = calc.margin;
+  const marginClass = margin > 30 ? "profit-good" : margin > 15 ? "profit-moderate" : "profit-low";
+  return '<div class="meta profit-section">' +
+    '<div class="mrow"><span>Estimated revenue</span><strong>' + revenue + '</strong></div>' +
+    '<div class="mrow"><span>Estimated profit</span><strong>' + profit + '</strong></div>' +
+    '<div class="mrow"><span>Profit margin</span><strong class="profit-margin ' + marginClass + '">' + margin + '%</strong></div>' +
+    '<div class="mnote small">*Based on ' + (en && en.dailyEst ? "estimated" : "actual") + ' sales. Shipping $5, platform 15% fee.</div>' +
+    '</div>';
+}
+
 function salesMetaHtml(p) {
   const en = enrichMap[p.id];
   if (en) {
@@ -70,7 +97,9 @@ function salesMetaHtml(p) {
       <div class="meta"><span>Total sold (CJ orders)</span><strong>${sold}</strong></div>
       <div class="meta"><span>Rating & reviews</span><strong>${ratingBits}</strong></div>
       <div class="meta"><span>Sales estimate</span><strong>${est}</strong></div>
-      ${flags.length ? `<div class="meta"><span>Listing status</span><strong>${flags.join(" · ")}</strong></div>` : ""}`;
+      ${flags.length ? `<div class="meta"><span>Listing status</span><strong>${flags.join(" · ")}</strong></div>` : ""}
+      ${en && calculateProfit(p, en)?.margin > 0 ? profitHtml(p, en) : ""}
+      <div class="meta"><span>Full analysis</span><button type="button" class="view-analysis-btn" title="Open full product analysis">📊 View analysis →</button></div>`;
   }
   if (pendingEnrich.has(p.id)) {
     return `<div class="meta"><span>Sales & ratings</span><span>⏳ loading…</span></div>`;
