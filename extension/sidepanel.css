@@ -267,4 +267,4 @@ button.btn-sm:hover{background:var(--tag-bg)}
 .supplier-warehouses{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-top:5px}
 .wh-label{font-size:10px;color:var(--text3);font-weight:700}
 .wh-tag{font-size:9.5px;font-weight:600;padding:1px 6px;border-radius:999px;background:var(--wh-bg);color:var(--wh-text);white-space:nowrap}
-.wh-more{font-size:9.5px;color:var(--text3)}
+.wh-more{font-size:9.5px;color:var(--text3)}.pagination{display:flex;align-items:center;justify-content:center;gap:8px;padding:12px 0;margin-top:12px;border-top:1px solid var(--border)}.page-info{font-size:12px;color:var(--muted);min-width:80px;text-align:center}.pagination .btn-sm{padding:6px 14px;font-size:12px;border-radius:6px}

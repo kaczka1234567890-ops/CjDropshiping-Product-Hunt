@@ -74,6 +74,9 @@ let pendingEnrich = new Set();
 let shownProducts = [];
 let bestSellingMode = false;
 let searchGen = 0;
+let currentPage = 1;
+let totalPages = 1;
+let lastSearchParams = {};
 
 // ── Account / sign-in UI ────────────────────────────────────────
 function setAuthMessage(text, ok) {
@@ -381,8 +384,8 @@ function applyRangeFilters(products) {
 function buildParams(extra = {}) {
   const params = new URLSearchParams({
     q: queryInput.value.trim(),
-    page: "1",
-    pageSize: "12",
+    page: String(currentPage),
+    pageSize: "50",
     sort: "winning",
     ...extra
   });
@@ -534,6 +537,21 @@ function renderProducts(products) {
     });
     resultsEl.appendChild(item);
   });
+  // Show pagination if more than 1 page
+  const paginationEl = document.getElementById("pagination");
+  const prevBtn = document.getElementById("prevPage");
+  const nextBtn = document.getElementById("nextPage");
+  const pageInfo = document.getElementById("pageInfo");
+  if (paginationEl && prevBtn && nextBtn && pageInfo) {
+    if (totalPages > 1) {
+      paginationEl.hidden = false;
+      prevBtn.disabled = currentPage <= 1;
+      nextBtn.disabled = currentPage >= totalPages;
+      pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+    } else {
+      paginationEl.hidden = true;
+    }
+  }
 }
 
 function parseRange(value) {
@@ -1313,6 +1331,9 @@ async function enrichShown(gen, isBestSelling, products, { filterFirst = false }
 }
 
 async function runSearch({ trending = false, bestSelling = false } = {}) {
+  lastSearchParams = { trending, bestSelling };
+  currentPage = 1;
+  totalPages = 1;
   searchButton.disabled = true;
   trendingButton.disabled = true;
   if (bestSellingButton) bestSellingButton.disabled = true;
@@ -1337,6 +1358,7 @@ async function runSearch({ trending = false, bestSelling = false } = {}) {
     const data = await res.json();
     if (!res.ok) throw new Error([data.error, data.detail].filter(Boolean).join(" "));
     const products = data.products || [];
+    totalPages = Number(data.totalPages) || 1;
     if (!products.length) {
       setMessage("No products matched. Loosen the filters or try another keyword.", false);
       setStatus("Backend ready · 0 products", "warn");
@@ -1424,6 +1446,17 @@ if (bestSellingButton) {
     if (countryFilterBar) countryFilterBar.hidden = true;
   });
 }
+
+// Pagination: load a different page with the same search params
+function loadPage(page) {
+  if (page < 1 || page > totalPages || page === currentPage) return;
+  currentPage = page;
+  runSearch(lastSearchParams);
+}
+const prevPageBtn = document.getElementById("prevPage");
+const nextPageBtn = document.getElementById("nextPage");
+if (prevPageBtn) prevPageBtn.addEventListener("click", () => loadPage(currentPage - 1));
+if (nextPageBtn) nextPageBtn.addEventListener("click", () => loadPage(currentPage + 1));
 
 async function runBestSellerSupplierSearch() {
   const query = queryInput.value.trim();
