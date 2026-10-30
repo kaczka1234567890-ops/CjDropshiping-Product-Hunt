@@ -64,15 +64,24 @@
         <label>Max price ($)<input type="number" id="fMaxPrice" min="0" step="0.01" placeholder="60"></label>
         <label>Min stock<input type="number" id="fMinStock" min="0" step="1" placeholder="100"></label>
         <label>Max stock<input type="number" id="fMaxStock" min="0" step="1" placeholder="5000"></label>
-        <label>Max days since listed<input type="number" id="fMaxDays" min="0" step="1" placeholder="e.g. 30 (only show ≤ N days old)"></label>
         <label>Min sellers (listed by)<input type="number" id="fMinListed" min="0" step="1" placeholder="e.g. 1"></label>
         <label>Max sellers (listed by)<input type="number" id="fMaxListed" min="0" step="1" placeholder="e.g. 5"></label>
+        <label>Max days since listed<input type="number" id="fMaxDays" min="0" step="1" placeholder="e.g. 30 (only show ≤ N days old)"></label>
         <label>Deliver to:
           <select id="fDeliverTo">
             <option value="US" selected>US</option>
             <option value="GB">GB</option><option value="CA">CA</option>
             <option value="AU">AU</option><option value="DE">DE</option>
-            <option value="FR">FR</option><option value="JP">JP</option>
+            <option value="FR">FR</option><option value="ES">ES</option>
+            <option value="IT">IT</option><option value="NL">NL</option>
+            <option value="JP">JP</option><option value="KR">KR</option>
+            <option value="SG">SG</option><option value="MY">MY</option>
+            <option value="TH">TH</option><option value="VN">VN</option>
+            <option value="PH">PH</option><option value="IN">IN</option>
+            <option value="BR">BR</option><option value="MX">MX</option>
+            <option value="AE">AE</option><option value="SA">SA</option>
+            <option value="IL">IL</option><option value="TR">TR</option>
+            <option value="ZA">ZA</option><option value="NZ">NZ</option>
           </select>
         </label>
       </div>
@@ -161,29 +170,26 @@
         encrypted on our server. The extension never keeps it on your device.</p>
       <div class="mrow"><span>Status</span><strong id="cjKeyMeta">Checking…</strong></div>
       <div class="set-row">
-        <input id="cjKeyInput" type="password" placeholder="Paste API key here (…@api@…)" autocomplete="off" spellcheck="false">
+        <input id="cjKeyInput" type="password" placeholder="Paste API Key here (…@api@…)" autocomplete="off" spellcheck="false">
         <button type="button" id="cjKeyToggle" class="info-btn">Show</button>
       </div>
-      <p class="mnote">Where to find it: log in to CJdropshipping → <strong>My CJ → API</strong> → copy the API Key.</p>
-      <div class="cj-api-guide" style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:12px;margin-bottom:10px;">
-        <strong style="font-size:12px;color:#c27803;">📋 How to get your CJ API Key:</strong>
-        <ol style="margin:6px 0 0 16px;font-size:11.5px;color:var(--text);line-height:1.9;">
-          <li>Log in to <strong>https://www.cjdropshipping.com</strong></li>
-          <li>Go to <strong>My CJ → API</strong> (or <strong>Integrations → API App</strong>)</li>
-          <li>If needed, click <strong>Enable</strong> on the API App</li>
-          <li>Click <strong>Generate</strong> and copy your API key</li>
-          <li>Paste it here — it looks like <code style="background:#f5f5f5;padding:1px 4px;border-radius:3px;">xxx@api@yyy</code></li>
-        </ol>
-        <p style="margin:6px 0 0;font-size:11px;color:var(--muted);">Your key is encrypted and stored securely.</p>
-      </div>
+      <p class="mnote">Where to find it: log in to CJdropshipping → <strong>My CJ → API</strong> (API Docs) → copy the API Key and paste it above. The key is validated with CJ before saving and is stored only on the local server machine (<code>data/settings.json</code>), never in the extension.</p>
+      <div class="set-meta" id="cjKeyMeta">Checking current key…</div>
       <div class="mactions">
-        <button type="button" id="cjKeySave" class="lp-btn lp-btn-primary">Save API Key</button>
-        <button type="button" id="cjKeyRemove" class="info-btn">Remove saved key</button>
+        <button type="button" class="set-remove" id="cjKeyRemove">Remove saved key</button>
+        <button type="button" class="set-save" id="cjKeySave">Save API Key</button>
       </div>
-      <div id="cjKeyStatus" class="message"></div>
+      <div class="set-status" id="cjKeyStatus" role="status"></div>
     </div>
   </div>
 
-  <script type="module" src="popup.js"></script>
+  <div id="sellersModal" class="modal" hidden>
+    <div class="modal-card modal-card-wide">
+      <button class="modal-close" id="sellersClose" type="button" aria-label="Close">×</button>
+      <div id="sellersBody"></div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
 </body>
 </html>
