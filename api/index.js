@@ -1012,18 +1012,28 @@ app.get("/api/products/:pid", requireAuth, async (req, res) => {
 
   try {
     const result = await withCjKey(req.user.id, res, async () => {
-      const { product, note, createrTime: detailCreaterTime, daysSinceListing: detailDaysSinceListing } = await getProductDetail(pid);
+      // Run all three CJ calls in parallel — they're independent and the
+      // request-chain serialises them anyway, but Promise.all lets us
+      // fail-fast on the first error and short-circuit the others.
+      const [detail, sales, reviews] = await Promise.allSettled([
+        getProductDetail(pid),
+        getProductSalesInfo(pid),
+        getProductReviews(pid)
+      ]);
+      const detailResult = detail.status === "fulfilled" ? detail.value : null;
+      const product = detailResult?.product;
+      if (!product) throw new Error("CJ returned no product detail for this pid.");
       const analyzed = analyzeProduct(product);
-      let sales = null;
-      try { sales = await getProductSalesInfo(analyzed.id || pid); } catch (e) { console.warn("Sales unavailable:", e.message); }
-      let reviews = null;
-      try { reviews = await getProductReviews(analyzed.id || pid); } catch (e) { console.warn("Reviews unavailable:", e.message); }
-      const metrics = await buildSalesMetrics(req.user.id, analyzed.id || pid, sales);
+      const salesData = sales.status === "fulfilled" ? sales.value : null;
+      if (sales.status === "rejected") console.warn("Sales unavailable:", sales.reason?.message);
+      const reviewsData = reviews.status === "fulfilled" ? reviews.value : null;
+      if (reviews.status === "rejected") console.warn("Reviews unavailable:", reviews.reason?.message);
+      const metrics = await buildSalesMetrics(req.user.id, analyzed.id || pid, salesData);
       // Merge createrTime/daysSinceListing from product detail as fallback
-      const salesWithDetailTime = sales || {};
-      if (detailCreaterTime && !salesWithDetailTime.createrTime) salesWithDetailTime.createrTime = detailCreaterTime;
-      if (detailDaysSinceListing !== null && salesWithDetailTime.daysSinceListing === null) salesWithDetailTime.daysSinceListing = detailDaysSinceListing;
-      return { product: analyzed, reviews, sales: salesWithDetailTime, metrics, note, supplier: sales, adspy: buildAdSpy(analyzed), sellerList: buildSellerList(analyzed, sales) };
+      const salesWithDetailTime = salesData || {};
+      if (detailResult?.createrTime && !salesWithDetailTime.createrTime) salesWithDetailTime.createrTime = detailResult.createrTime;
+      if (detailResult?.daysSinceListing !== null && salesWithDetailTime.daysSinceListing === null) salesWithDetailTime.daysSinceListing = detailResult.daysSinceListing;
+      return { product: analyzed, reviews: reviewsData, sales: salesWithDetailTime, metrics, note: detailResult?.note, supplier: salesData, adspy: buildAdSpy(analyzed), sellerList: buildSellerList(analyzed, salesData) };
     });
 
     recordUsage(req.user.id, "/api/products/:pid", req.ip, deviceId, 200);
