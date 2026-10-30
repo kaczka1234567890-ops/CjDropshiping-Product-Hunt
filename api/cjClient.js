@@ -398,18 +398,18 @@ export async function getProductReviews(pid, { full = false } = {}) {
   let list = Array.isArray(data?.list) ? data.list : [];
   const total = numberOrNullLocal(data?.total);
 
+  const now = Date.now();
+  const withinMs = (ms) =>
+    list.filter((c) => c?.commentDate && Number.isFinite(Date.parse(c.commentDate)) && now - Date.parse(c.commentDate) <= ms).length;
+  const oldestDateMs = () => {
+    const dates = list.map((c) => Date.parse(c?.commentDate)).filter(Number.isFinite);
+    return dates.length ? Math.min(...dates) : NaN;
+  };
+
   // Full pagination only when the caller explicitly asks (trending analysis).
   // For product detail / sellers modal a single page is enough and saves
   // 1-2 extra round-trips to CJ.
   if (full) {
-    const now = Date.now();
-    const withinMs = (ms) =>
-      list.filter((c) => c?.commentDate && Number.isFinite(Date.parse(c.commentDate)) && now - Date.parse(c.commentDate) <= ms).length;
-    const oldestDateMs = () => {
-      const dates = list.map((c) => Date.parse(c?.commentDate)).filter(Number.isFinite);
-      return dates.length ? Math.min(...dates) : NaN;
-    };
-
     let pages = 1;
     const windowMs = 30 * 86400000;
     while (pages < 3 && total !== null && list.length < total && Number.isFinite(oldestDateMs()) && now - oldestDateMs() <= windowMs) {

@@ -22,6 +22,32 @@ import {
   primeTokenCache,
   runWithApiKey
 } from "./cjClient.js";
+
+// ── In-memory product detail cache (TTL: 5 min) ──
+// Key: `${userId}:${pid}` — scoped per user since CJ keys differ
+const productDetailCache = new Map();
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+function getCachedProductDetail(userId, pid) {
+  const key = `${userId}:${pid}`;
+  const entry = productDetailCache.get(key);
+  if (entry && Date.now() - entry.ts < CACHE_TTL_MS) {
+    return entry.data;
+  }
+  productDetailCache.delete(key);
+  return null;
+}
+
+function setCachedProductDetail(userId, pid, data) {
+  const key = `${userId}:${pid}`;
+  productDetailCache.set(key, { data, ts: Date.now() });
+  // Simple cleanup: if cache grows too large, clear oldest 20%
+  if (productDetailCache.size > 200) {
+    const entries = [...productDetailCache.entries()].sort((a, b) => a[1].ts - b[1].ts);
+    const toDelete = entries.slice(0, Math.floor(entries.length * 0.2));
+    toDelete.forEach(([k]) => productDetailCache.delete(k));
+  }
+}
 import { analyzeProduct, sortProducts, estimateProfit } from "./scoring.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1010,6 +1036,13 @@ app.get("/api/products/:pid", requireAuth, async (req, res) => {
   const pid = String(req.params.pid || "").trim();
   if (!pid) return res.status(400).json({ error: "Product id required." });
 
+  // Check in-memory cache first
+  const cached = getCachedProductDetail(req.user.id, pid);
+  if (cached) {
+    recordUsage(req.user.id, "/api/products/:pid", req.ip, deviceId, 200);
+    return res.json({ ...cached, cached: true });
+  }
+
   try {
     const result = await withCjKey(req.user.id, res, async () => {
       // Run all three CJ calls in parallel — they're independent and the
@@ -1035,6 +1068,9 @@ app.get("/api/products/:pid", requireAuth, async (req, res) => {
       if (detailResult?.daysSinceListing !== null && salesWithDetailTime.daysSinceListing === null) salesWithDetailTime.daysSinceListing = detailResult.daysSinceListing;
       return { product: analyzed, reviews: reviewsData, sales: salesWithDetailTime, metrics, note: detailResult?.note, supplier: salesData, adspy: buildAdSpy(analyzed), sellerList: buildSellerList(analyzed, salesData) };
     });
+
+    // Cache the result
+    setCachedProductDetail(req.user.id, pid, result);
 
     recordUsage(req.user.id, "/api/products/:pid", req.ip, deviceId, 200);
     res.json(result);
