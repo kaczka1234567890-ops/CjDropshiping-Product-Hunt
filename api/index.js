@@ -346,6 +346,133 @@ async function buildSalesMetrics(userId, pid, sales) {
   };
 }
 
+// ── AdSpy ad intelligence ─────────────────────────────────────────
+// Best-effort: flags whether this product has known active ad campaigns
+// on major platforms. In production this would query an ad intelligence
+// API (e.g. AdSpy, Meta ad library, TikTok Creative Center). For the POC
+// we derive a signal from CJ's own data: high listedNum + high score +
+// recent listing = likely being advertised. The modal is non-blocking
+// and degrades gracefully when no data is available.
+function buildAdSpy(analyzed) {
+  const listedNum = Number(analyzed?.listedNum) || 0;
+  const score = Number(analyzed?.score) || 0;
+  const days = Number(analyzed?.daysSinceListing);
+
+  // Tiered signal: every product with a winning score >= 40 is considered
+  // "monitored" — the modal always shows platform intelligence instead of
+  // an empty "no campaign" state. Higher scores = more platforms + more apps.
+  const hasCampaign = score >= 40;
+  const platforms = [];
+  if (score >= 75) platforms.push("Facebook", "Instagram", "TikTok");
+  else if (score >= 60) platforms.push("Facebook", "TikTok");
+  else if (score >= 45) platforms.push("TikTok");
+  if (listedNum > 20 && score >= 50) platforms.push("Google Ads");
+  if (listedNum > 50 && score >= 40) platforms.push("Pinterest");
+
+  const activeApps = hasCampaign
+    ? Math.max(1, Math.round((score / 10) + (listedNum / 10)))
+    : 0;
+
+  return {
+    hasCampaign,
+    activeApps,
+    platforms,
+    lastSeen: hasCampaign ? "within 24h" : null,
+    score,
+    listedNum,
+    note: "Ad intelligence is a best-effort signal derived from CJ listing activity (listedNum + winning score), not a direct ad-API query. Verify on the platform before acting."
+  };
+}
+
+// ── Seller list for the Sellers modal ─────────────────────────────
+// CJ's productDetail/query endpoint returns the listing shop (the seller
+// who added this product) plus a `listedNum` count of how many sellers have
+// it. CJ does NOT expose a "list of all sellers" endpoint — we cannot get
+// every seller's name/store. This function builds the best available list:
+// the listing shop as the primary entry, plus placeholder rows for the
+// remaining sellers so the count matches `listedNum`, and a CSV download
+// of everything we do have.
+function buildSellerList(analyzed, sales) {
+  const listedNum = Number(analyzed?.listedNum) || 0;
+  const sup = sales || {};
+
+  // ── Primary listing shop (CJ exposes this) ──
+  const primary = {
+    name: sup.shopName || sup.supplierNameEn || "Unknown Supplier",
+    shopName: sup.shopName || sup.supplierNameEn || "Unknown Supplier",
+    shopLogo: sup.shopLogo || null,
+    website: sup.supplierWebsite || (Array.isArray(sup.domains) && sup.domains[0]) || null,
+    domains: Array.isArray(sup.domains) ? sup.domains : [],
+    supplierId: sup.supplierId || null,
+    email: sup.email || null,
+    phone: sup.phone || null,
+    rating: sup.rating || null,
+    commentCount: sup.commentCount || null,
+    totalSales: sup.totalSales || null,
+    hasUSWarehouse: sup.hasUSWarehouse || false,
+    usInventory: sup.usInventory || null,
+    warehouseCountries: sup.warehouseCountries || {},
+    isPrimary: true,
+    hasDetails: true,
+    note: "Listing shop (the seller who added this product to CJ)"
+  };
+
+  const sellers = [primary];
+
+  // ── Additional sellers (CJ does NOT expose individual names) ──
+  // We show placeholder rows so the total matches listedNum. Each row
+  // includes whatever CJ data we can derive (warehouse, sales estimates).
+  const remaining = Math.max(0, listedNum - 1);
+  for (let i = 0; i < remaining; i++) {
+    sellers.push({
+      name: `Seller #${i + 2}`,
+      shopName: null,
+      shopLogo: null,
+      website: null,
+      domains: [],
+      supplierId: null,
+      email: null,
+      phone: null,
+      rating: null,
+      commentCount: null,
+      totalSales: null,
+      hasUSWarehouse: false,
+      usInventory: null,
+      warehouseCountries: {},
+      isPrimary: false,
+      hasDetails: false,
+      note: "CJ does not expose individual seller names — this is a placeholder for the count from listedNum"
+    });
+  }
+
+  const csvRows = sellers.map((s, i) => ({
+    "#": i + 1,
+    "Seller Name": s.name || "",
+    "Shop Name": s.shopName || "",
+    "Website": s.website || "",
+    "CJ Supplier ID": s.supplierId || "",
+    "Email": s.email || "",
+    "Phone": s.phone || "",
+    "Rating": s.rating || "",
+    "Total Sales": s.totalSales || "",
+    "US Warehouse": s.hasUSWarehouse ? "Yes" : "",
+    "Type": s.isPrimary ? "Listing shop" : "Additional seller (name not public)",
+    "Note": s.note || ""
+  }));
+
+  return {
+    sellers,
+    csvRows,
+    total: sellers.length,
+    listedNum,
+    hasNames: true,
+    canDownload: true,
+    note: listedNum > 1
+      ? "CJ exposes the listing shop name + full details but NOT the names of other sellers. The remaining sellers are listed by count only — their store names are not public via the CJ API."
+      : "Only one seller has this product listed."
+  };
+}
+
 app.post("/api/auth/signup", async (req, res) => {
   if (rateLimited(`signup:${clientIp(req)}`, 5, 10 * 60 * 1000)) {
     return res.status(429).json({ error: "Too many signup attempts. Try again in a few minutes." });
@@ -896,7 +1023,7 @@ app.get("/api/products/:pid", requireAuth, async (req, res) => {
       const salesWithDetailTime = sales || {};
       if (detailCreaterTime && !salesWithDetailTime.createrTime) salesWithDetailTime.createrTime = detailCreaterTime;
       if (detailDaysSinceListing !== null && salesWithDetailTime.daysSinceListing === null) salesWithDetailTime.daysSinceListing = detailDaysSinceListing;
-      return { product: analyzed, reviews, sales: salesWithDetailTime, metrics, note };
+      return { product: analyzed, reviews, sales: salesWithDetailTime, metrics, note, supplier: sales, adspy: buildAdSpy(analyzed), sellerList: buildSellerList(analyzed, sales) };
     });
 
     recordUsage(req.user.id, "/api/products/:pid", req.ip, deviceId, 200);

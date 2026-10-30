@@ -11,6 +11,7 @@
     <div class="brandmark">PH</div>
     <div><div class="brand">Product Hunter</div><div class="subbrand">CJdropshipping · Local POC</div></div>
     <div class="status" id="status">Checking backend…</div>
+    <button type="button" id="themeToggle" class="settings-btn" title="Toggle dark/light mode">🌙</button>
     <button type="button" id="settingsBtn" class="settings-btn" title="Settings — CJ API Key">⚙ Settings</button>
   </header>
   <main class="container">
@@ -174,6 +175,12 @@
         </div>
         <div class="set-status" id="cjKeyStatus" role="status"></div>
       </div>
+    </div>
+  </div>
+  <div id="sellersModal" class="modal" hidden>
+    <div class="modal-card modal-card-wide">
+      <button class="modal-close" id="sellersClose" type="button" aria-label="Close">×</button>
+      <div id="sellersBody"></div>
     </div>
   </div>
   <script src="/app.js"></script>

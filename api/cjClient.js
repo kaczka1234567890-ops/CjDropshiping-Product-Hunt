@@ -473,6 +473,9 @@ export async function getProductSalesInfo(pid) {
   const domains = Array.isArray(data.domain) ? data.domain.map(clean).filter(Boolean) : [];
   const thirdUrl = clean(data.thirdProductUrl);
   const supplierWebsite = supplierlink || domainName || domains[0] || thirdUrl || null;
+  // Seller contact details (CJ exposes these on the listing shop)
+  const sellerEmail = clean(data.supplierEmail) || clean(data.shopEmail) || clean(data.email) || null;
+  const sellerPhone = clean(data.supplierPhone) || clean(data.shopPhone) || clean(data.phone) || null;
   const hasUSWarehouse = Number.isFinite(warehouseCountries.US) && warehouseCountries.US > 0;
 
   const totalSales = numberOrNullLocal(data.orderCount);
@@ -533,6 +536,11 @@ export async function getProductSalesInfo(pid) {
     shopName: clean(data.shop_name),
     shopLogo: clean(data.shop_logo),
     supplierNameEn: clean(data.supplierNameEn),
+    supplierId: clean(data.supplierId) || clean(data.supplier_id) || null,
+    supplierlink,
+    domains,
+    email: sellerEmail,
+    phone: sellerPhone,
     warehouseCountries,
     hasUSWarehouse,
     usInventory: warehouseCountries.US ?? null

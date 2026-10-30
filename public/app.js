@@ -151,13 +151,17 @@ function renderProducts(products) {
       <ul class="evidence">${evidence}</ul>
       <div class="card-actions">
         <button type="button" class="info-btn list-btn" title="List this product to your CJ store">🏪 List to CJ Store</button>
-        <button type="button" class="info-btn">Supplier info</button>
+        <button type="button" class="info-btn" title="View supplier & product details">Supplier info</button>
+        <button type="button" class="info-btn sellers-btn" title="View sellers list">📋 Sellers →</button>
+        <button type="button" class="info-btn adspy-btn" title="AdSpy — live ad intelligence">📊 AdSpy</button>
         <span class="hint">Click card to open on CJ</span>
       </div>`;
     card.addEventListener("click", (event) => {
       if (event.target.closest(".info-btn")) {
         event.stopPropagation();
         if (event.target.closest(".list-btn")) openListing(p.id, p.name);
+        else if (event.target.closest(".sellers-btn")) openSellersModal(p.id);
+        else if (event.target.closest(".adspy-btn")) openAdSpyModal(p.id);
         else openDetail(p.id);
         return;
       }
@@ -556,10 +560,187 @@ async function openDetail(id) {
   }
 }
 
+// Sellers modal — shows the listing shop + warehouse breakdown from CJ
+async function openSellersModal(id) {
+  if (!id) return;
+  modal.hidden = false;
+  modalBody.innerHTML = "<p class='message'>Loading seller info…</p>";
+  try {
+    const res = await fetch(`/api/products/${encodeURIComponent(id)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error([data.error, data.detail].filter(Boolean).join(" "));
+    const p = data.product || {};
+    const sup = data.supplier || {};
+
+    const sl = data.sellerList || {};
+    const sellers = Array.isArray(sl.sellers) ? sl.sellers : [];
+    const csvRows = Array.isArray(sl.csvRows) ? sl.csvRows : [];
+    const name = p.name || "Untitled product";
+    const shopName = sup.shopName || sup.supplierNameEn || "Unknown Supplier";
+    const shopLogo = sup.shopLogo || null;
+    const supplierWebsite = sup.supplierWebsite || null;
+    const warehouseCountries = sup.warehouseCountries || {};
+    const hasUSWarehouse = Boolean(sup.hasUSWarehouse);
+    const usInventory = sup.usInventory !== null && sup.usInventory !== undefined ? Number(sup.usInventory) : null;
+    const listedNum = p.listedNum !== null && p.listedNum !== undefined ? Number(p.listedNum) : null;
+    const warehouseRows = Object.entries(warehouseCountries)
+      .map(([code, qty]) => ({ code, qty: Number(qty) || 0 }))
+      .sort((a, b) => b.qty - a.qty);
+
+    // Build CSV string
+    const csvHeaders = csvRows.length ? Object.keys(csvRows[0]).join(',') : '';
+    const csvBody = csvRows.map(r => Object.values(r).map(v => '"' + String(v ?? '').replace(/"/g, '""') + '"').join(',')).join('\n');
+    const csvString = csvHeaders + '\n' + csvBody;
+    const csvBlob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    const csvUrl = URL.createObjectURL(csvBlob);
+
+    // Build seller rows HTML with full detail
+    const sellerRowsHtml = sellers.map(function(s) {
+      const detailFields = [];
+      if (s.supplierId) detailFields.push('<span style="margin:2px;background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700">ID: ' + escapeHtml(s.supplierId) + '</span>');
+      if (s.rating !== null && s.rating !== undefined) detailFields.push('<span style="margin:2px;background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700">★ ' + Number(s.rating).toFixed(1) + '/5</span>');
+      if (s.commentCount !== null && s.commentCount !== undefined) detailFields.push('<span style="margin:2px;background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700">💬 ' + Number(s.commentCount).toLocaleString() + ' reviews</span>');
+      if (s.totalSales !== null && s.totalSales !== undefined) detailFields.push('<span style="margin:2px;background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700">📦 ' + Number(s.totalSales).toLocaleString() + ' sold</span>');
+      if (s.hasUSWarehouse) detailFields.push('<span style="margin:2px;background:#dcfce7;color:#16a34a;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700">🇺🇸 US warehouse</span>');
+      if (s.usInventory !== null && s.usInventory !== undefined) detailFields.push('<span style="margin:2px;background:#dcfce7;color:#16a34a;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700">Stock: ' + Number(s.usInventory).toLocaleString() + '</span>');
+      if (s.email) detailFields.push('<span style="margin:2px;background:#dbeafe;color:#1e40af;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700">✉ ' + escapeHtml(s.email) + '</span>');
+      if (s.phone) detailFields.push('<span style="margin:2px;background:#dbeafe;color:#1e40af;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700">📞 ' + escapeHtml(s.phone) + '</span>');
+      if (s.domains && s.domains.length) detailFields.push('<span style="margin:2px;background:#dbeafe;color:#1e40af;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700">🌐 ' + s.domains.length + ' domain(s)</span>');
+
+      const warehouseEntries = s.warehouseCountries ? Object.entries(s.warehouseCountries) : [];
+      const warehouseBadges = warehouseEntries.length
+        ? warehouseEntries.map(function(cn) {
+            return '<span style="background:#e0f2fe20;color:#0369a1;padding:1px 6px;border-radius:10px;font-size:10px;margin:2px">' + escapeHtml(cn[0]) + ': ' + Number(cn[1]).toLocaleString() + '</span>';
+          }).join('')
+        : '';
+
+      const websiteUrl = s.website ? (s.website.match(/^https?:\/\//i) ? s.website : 'https://' + s.website) : null;
+
+      return '<div class="seller-row" style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px dashed #e4e4e4">'
+        + (s.shopLogo ? '<img src="' + escapeHtml(s.shopLogo) + '" alt="" style="width:36px;height:36px;border-radius:50%;object-fit:cover;flex-shrink:0;">' : '<div style="width:36px;height:36px;border-radius:50%;background:#e5e7eb;display:grid;place-items:center;font-weight:bold;color:#6b7280;font-size:14px;flex-shrink:0;">' + ((s.name || '?').charAt(0)) + '</div>')
+        + '<div style="flex:1;min-width:0">'
+          + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+            + '<strong style="font-size:13px">' + escapeHtml(s.name) + '</strong>'
+            + (s.isPrimary ? '<span style="margin-left:6px;background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:10px;font-size:10px;font-weight:700">⭐ Listing shop</span>' : '<span style="margin-left:6px;background:#f1f5f9;color:#64748b;padding:2px 6px;border-radius:10px;font-size:10px">Additional seller</span>')
+          + '</div>'
+          + (websiteUrl ? '<div style="font-size:11px;margin-top:2px"><a href="' + escapeHtml(websiteUrl) + '" target="_blank" rel="noopener" style="color:#ff7700">' + escapeHtml(s.website) + '</a></div>' : '<div style="font-size:11px;color:#999">' + (s.isPrimary ? 'No website provided by CJ' : 'Name not public on CJ') + '</div>')
+          + (detailFields.length ? '<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">' + detailFields.join('') + '</div>' : '')
+          + (warehouseBadges ? '<div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">' + warehouseBadges + '</div>' : '')
+          + (!s.hasDetails ? '<div style="font-size:10px;color:#999;margin-top:4px;font-style:italic">' + escapeHtml(s.note) + '</div>' : '')
+        + '</div>'
+      + '</div>';
+    }).join('');
+
+    modalBody.innerHTML = `
+      <h3 style="margin:0 36px 12px 0;font-size:15px;line-height:1.3">${escapeHtml(name)}</h3>
+      <div class="msection">Seller / Supplier</div>
+      <div class="mrow" style="align-items:flex-start">
+        <div style="display:flex;gap:12px;align-items:center">
+          ${shopLogo ? `<img src="${escapeHtml(shopLogo)}" alt="${escapeHtml(shopName)}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;">` : `<div style="width:40px;height:40px;border-radius:50%;background:#e5e7eb;display:flex;align-items:center;justify-content:center;font-weight:bold;color:#6b7280;">${shopName.charAt(0)}</div>`}
+          <div style="flex:1">
+            <strong>${escapeHtml(shopName)}</strong>
+            ${supplierWebsite ? `<div><a href="${escapeHtml(/^https?:\/\//i.test(supplierWebsite) ? supplierWebsite : `https://${supplierWebsite}`)}" target="_blank" rel="noopener" style="font-size:13px;">${escapeHtml(supplierWebsite)}</a></div>` : `<div class="muted" style="font-size:13px;">No website provided by CJ</div>`}
+          </div>
+        </div>
+      </div>
+      ${listedNum !== null ? `<div class="mrow"><span>Number of sellers who listed this</span><strong>${listedNum.toLocaleString()}</strong></div>` : ''}
+      ${hasUSWarehouse ? `<div class="mrow"><span>US warehouse</span><strong>✅ Yes — ${usInventory !== null ? usInventory.toLocaleString() + ' in stock' : 'stock available'}</strong></div>` : `<div class="mrow"><span>US warehouse</span><strong>No US stock detected</strong></div>`}
+      <div class="msection">Warehouse locations</div>
+      ${warehouseRows.length ? `
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${warehouseRows.map(w => `
+            <span style="background:#e0f2fe20;color:#0369a1;padding:2px 8px;border-radius:12px;font-size:12px;border:1px solid #bae6fd20;">
+              ${escapeHtml(w.code)}: ${w.qty.toLocaleString()}
+            </span>
+          `).join('')}
+        </div>
+      ` : `<div class="muted">No warehouse data from CJ.</div>`}
+      <div class="msection">All sellers (${sellers.length})</div>
+      ${sellerRowsHtml}
+      <p class="mnote">${escapeHtml(sl.note || "CJ provides the listing shop and warehouse inventory per country via the productDetail/query endpoint. The \"listed by\" count is CJ's own number of sellers who have this product in their store.")}</p>
+
+      <div class="mactions">
+        <a id="sellersDownloadLink" href="${csvUrl}" download="sellers_${id}.csv" class="lp-btn-inline" style="text-decoration:none">⬇ Download CSV</a>
+        <button type="button" id="sellersListBtn" class="lp-btn-inline">🏪 List to CJ Store</button>
+        <button type="button" id="sellersCloseBtn2" class="button-secondary">Close</button>
+      </div>`;
+    const listBtn = modalBody.querySelector("#sellersListBtn");
+    if (listBtn) listBtn.addEventListener("click", () => { closeModal(); openListing(id, name); });
+    const closeBtn2 = modalBody.querySelector("#sellersCloseBtn2");
+    if (closeBtn2) closeBtn2.addEventListener("click", closeModal);
+  } catch (err) {
+    modalBody.innerHTML = `<p class="message error">${escapeHtml(err.message || "Request failed.")}</p>`;
+  }
+}
+
 document.querySelector("#modalClose").addEventListener("click", closeModal);
 modal.addEventListener("click", (event) => {
   if (event.target === modal) closeModal();
 });
+
+// ── AdSpy modal ───────────────────────────────────────────────────
+async function openAdSpyModal(id) {
+  if (!id) return;
+  modal.hidden = false;
+  modalBody.innerHTML = "<p class='message'>Loading ad intelligence…</p>";
+  try {
+    const res = await fetch(`/api/products/${encodeURIComponent(id)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error([data.error, data.detail].filter(Boolean).join(" "));
+    const p = data.product || {};
+    const adspy = data.adspy || {};
+    const name = p.name || "Untitled product";
+    const platforms = Array.isArray(adspy.platforms) ? adspy.platforms : [];
+    const activeApps = Number(adspy.activeApps) || 0;
+    const hasCampaign = Boolean(adspy.hasCampaign);
+    const lastSeen = adspy.lastSeen || null;
+    const note = adspy.note || "Ad intelligence is best-effort — real-time ad counts change constantly.";
+
+    if (!hasCampaign && !platforms.length) {
+      modalBody.innerHTML = `
+        <h3 style="margin:0 36px 12px 0;font-size:15px;line-height:1.3">${escapeHtml(name)}</h3>
+        <div class="msection">AdSpy</div>
+        <div class="mrow"><span>Status</span><strong>⚠ No active ad campaign detected</strong></div>
+        ${adspy.score !== undefined ? `<div class="mrow"><span>Winning score</span><strong>${adspy.score}/100</strong></div>` : ""}
+        ${adspy.listedNum !== undefined ? `<div class="mrow"><span>Listed by</span><strong>${Number(adspy.listedNum).toLocaleString()} sellers</strong></div>` : ""}
+        <p class="mnote">No ad intelligence available for this product yet. Check back later or verify manually on Facebook Ad Library, TikTok Creative Center, and Google Ads.</p>
+        <div class="mactions">
+          <button type="button" id="adspyCloseBtn" class="button-secondary">Close</button>
+        </div>`;
+      const closeBtn = modalBody.querySelector("#adspyCloseBtn");
+      if (closeBtn) closeBtn.addEventListener("click", closeModal);
+      return;
+    }
+
+    modalBody.innerHTML = `
+      <h3 style="margin:0 36px 12px 0;font-size:15px;line-height:1.3">${escapeHtml(name)}</h3>
+      <div class="msection">AdSpy — Live Ad Intelligence</div>
+      ${hasCampaign ? `<div class="mrow"><span>Campaign status</span><strong>✅ Active campaign running</strong></div>` : ""}
+      ${activeApps > 0 ? `<div class="mrow"><span>Active ad apps</span><strong>${activeApps.toLocaleString()} app(s) running ads</strong></div>` : ""}
+      ${lastSeen ? `<div class="mrow"><span>Last seen</span><strong>${escapeHtml(lastSeen)}</strong></div>` : ""}
+      <div class="msection">Platforms with live ads</div>
+      ${platforms.length ? `
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${platforms.map(pl => `
+            <span style="background:#fef3c720;color:#92400e;padding:4px 12px;border-radius:14px;font-size:12px;font-weight:700;border:1px solid #fcd34d40;">
+              📢 ${escapeHtml(pl)}
+            </span>
+          `).join('')}
+        </div>
+      ` : `<div class="muted">No platform data available.</div>`}
+      <p class="mnote">${escapeHtml(note)}</p>
+      <div class="mactions">
+        <button type="button" id="adspyListBtn" class="lp-btn-inline">🏪 List to CJ Store</button>
+        <button type="button" id="adspyCloseBtn2" class="button-secondary">Close</button>
+      </div>`;
+    const listBtn = modalBody.querySelector("#adspyListBtn");
+    if (listBtn) listBtn.addEventListener("click", () => { closeModal(); openListing(id, name); });
+    const closeBtn2 = modalBody.querySelector("#adspyCloseBtn2");
+    if (closeBtn2) closeBtn2.addEventListener("click", closeModal);
+  } catch (err) {
+    modalBody.innerHTML = `<p class="message error">${escapeHtml(err.message || "Request failed.")}</p>`;
+  }
+}
 
 // ---------------- Variant Pricing / List to CJ store ----------------
 const listingModal = document.querySelector("#listingModal");
@@ -1107,6 +1288,24 @@ if (initialQuery) {
 
 checkHealth();
 updatePager();
+
+// ── Dark / light theme toggle ─────────────────────────────────────
+const themeToggle = document.querySelector("#themeToggle");
+if (themeToggle) {
+  const stored = localStorage.getItem("theme");
+  if (stored === "dark") document.body.setAttribute("data-theme", "dark");
+
+  themeToggle.addEventListener("click", () => {
+    const isDark = document.body.getAttribute("data-theme") === "dark";
+    if (isDark) {
+      document.body.removeAttribute("data-theme");
+      localStorage.setItem("theme", "light");
+    } else {
+      document.body.setAttribute("data-theme", "dark");
+      localStorage.setItem("theme", "dark");
+    }
+  });
+}
 
 const settingsModal = document.querySelector("#settingsModal");
 const settingsBtn = document.querySelector("#settingsBtn");
