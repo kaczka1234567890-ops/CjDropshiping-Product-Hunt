@@ -898,7 +898,8 @@ async function openSellersModal(id) {
       + '</div>';
     }).join('');
 
-`
+    // Build the seller modal HTML
+    const modalHtml = `
       <h3 style="margin:0 36px 12px 0;font-size:15px;line-height:1.3">${escapeHtml(name)}</h3>
       <div class="msection">Seller / Supplier</div>
       <div class="mrow" style="align-items:flex-start">
@@ -932,6 +933,7 @@ async function openSellersModal(id) {
         <button type="button" id="sellersCloseBtn2" class="button-secondary">Close</button>
       </div>
     `;
+    modalBody.innerHTML = modalHtml;
     const listBtn = modalBody.querySelector("#sellersListBtn");
     if (listBtn) listBtn.addEventListener("click", () => { closeModal(); openListing(id, name); });
     const closeBtn2 = modalBody.querySelector("#sellersCloseBtn2");
