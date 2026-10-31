@@ -1,17 +1,20 @@
 {
   "name": "cj-winning-product-hunter",
   "version": "1.0.2",
-  "private": false,
-  "description": "CJdropshipping Winning Product Hunter — Cloud Edition",
+  "description": "CJdropshipping Product Hunter - find winning products with sales data",
   "type": "module",
+  "main": "api/index.js",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "multer": "^1.4.5-lts.1"
+  },
   "scripts": {
     "start": "node api/index.js",
-    "dev": "node --watch api/index.js",
-    "set-url": "node scripts/set-backend-url.mjs"
+    "dev": "node --watch api/index.js"
   },
-  "dependencies": {
-    "dotenv": "^16.4.7",
-    "express": "^4.21.2",
-    "@supabase/supabase-js": "^2.45.0"
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

@@ -510,6 +510,13 @@ function renderProducts(products) {
     const stock = p.stock === null || p.stock === undefined ? "?" : String(p.stock);
     const listed = p.listedNum === null || p.listedNum === undefined ? "listing ?" : `🏪 ${Number(p.listedNum).toLocaleString()} sellers`;
     const en = enrichMap[p.id] || {};
+    // Build warehouse countries badge (e.g. "🌍 CN US GB")
+    const warehouseEntries = Object.entries(en.warehouseCountries || {})
+      .filter(([, qty]) => Number(qty) > 0)
+      .sort((a, b) => b[1] - a[1]);
+    const countryCodes = warehouseEntries.length ? warehouseEntries.map(([cc]) => cc).slice(0, 5).join(" ") : null;
+    const countryBadge = countryCodes ? `<span class="qbadge">🌍 ${countryCodes}</span>` : null;
+
     const tags = [
       listed,
       `stock ${stock}`,
@@ -521,6 +528,7 @@ function renderProducts(products) {
       en.daysSinceListing !== null && en.daysSinceListing !== undefined
         ? `<span class="qbadge">📅 listed ${Number(en.daysSinceListing).toLocaleString()}d ago</span>`
         : null,
+      countryBadge,
       p.supplierName ? `supplier: ${escapeHtml(p.supplierName)}` : null,
       p.category ? escapeHtml(p.category) : null
     ].filter(Boolean).map(t => t.startsWith("<span") ? t : `<span>${t}</span>`).join("");

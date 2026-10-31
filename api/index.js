@@ -1139,7 +1139,8 @@ app.get("/api/enrich", requireAuth, async (req, res) => {
               reviewTotal: lite?.total ?? sales?.commentCount ?? null,
               isNewListing: sales?.isNewListing ?? null,
               isNewProduct: sales?.isNewProduct ?? null,
-              isRelisting: sales?.isRelisting ?? null
+              isRelisting: sales?.isRelisting ?? null,
+              warehouseCountries: sales?.warehouseCountries ?? {}
             };
           })
         );
