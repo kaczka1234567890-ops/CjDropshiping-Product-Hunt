@@ -191,6 +191,10 @@ body.panel{
 .auth-msg.ok{color:var(--accent)}
 .auth-hint{margin-top:14px;padding:10px 11px;border:1px dashed var(--border);border-radius:9px;
   font-size:11.5px;color:var(--text2);line-height:1.55;background:var(--bg3)}
+.auth-contact{margin-top:12px;text-align:center;font-size:12px;color:var(--text2)}
+.auth-contact .wa-link{display:inline-block;margin-top:4px;padding:8px 16px;background:#25d366;color:#fff;
+  border-radius:20px;font-weight:700;text-decoration:none;transition:background .15s}
+.auth-contact .wa-link:hover{background:#1da851}
 
 /* top bar */
 .user-bar{display:flex;align-items:center;gap:6px;margin-left:auto}
@@ -226,7 +230,10 @@ button.btn-sm:hover{background:var(--tag-bg)}
 }
 .theme-toggle:hover{background:var(--tag-bg)}
 
-/* ---- Country filter bar (shown in best-sellers mode) ---- */
+.wa-foot{margin-top:12px;text-align:center;font-size:12px;color:var(--text2)}
+.wa-foot .wa-link{display:inline-block;margin-top:4px;padding:8px 16px;background:#25d366;color:#fff;
+  border-radius:20px;font-weight:700;text-decoration:none;transition:background .15s}
+.wa-foot .wa-link:hover{background:#1da851}
 .country-filter{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;margin-top:10px;font-size:12px}
 .country-filter label{color:var(--text2);font-weight:700}
 .country-filter select{border:1px solid var(--border2);border-radius:8px;padding:7px 9px;font:inherit;font-size:12px;background:var(--input-bg);color:var(--text);cursor:pointer}
