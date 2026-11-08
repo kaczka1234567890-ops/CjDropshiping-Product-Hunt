@@ -221,15 +221,8 @@
         localStorage.removeItem(TOKEN_KEY);
         return;
       }
-      if (data.isAdmin) {
-        form.hidden = true;
-        adminView.hidden = false;
-        document.querySelector(".hint").hidden = true;
-      } else {
-        form.hidden = true;
-        memberView.hidden = false;
-        document.querySelector(".hint").hidden = true;
-      }
+      // Redirect ALL users (admin + member) to SM Tools website after login/signup
+      window.location.href = "https://www.smtools.online/";
     }
 
     form.addEventListener("submit", async (event) => {
