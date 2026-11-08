@@ -1,6 +1,6 @@
 {
   "name": "cj-winning-product-hunter",
-  "version": "1.0.2",
+  "version": "1.0.7",
   "description": "CJdropshipping Product Hunter - find winning products with sales data",
   "type": "module",
   "main": "api/index.js",
@@ -15,6 +15,9 @@
     "dev": "node --watch api/index.js"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
+  },
+  "volta": {
+    "node": "20.18.0"
   }
 }

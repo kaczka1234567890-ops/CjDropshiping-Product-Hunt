@@ -1,7 +1,10 @@
 {
   "version": 2,
+  "buildCommand": null,
+  "outputDirectory": "public",
   "functions": {
-    "api/index.js": {
+    "api/*.js": {
+      "runtime": "vercel@npm:@vercel/node",
       "maxDuration": 60
     }
   },

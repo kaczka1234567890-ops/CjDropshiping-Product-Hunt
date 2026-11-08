@@ -12,6 +12,7 @@ const DEFAULT_API_BASE = "https://cj-winning-product-hunter-poc.vercel.app";
 let API_BASE = DEFAULT_API_BASE;
 
 const TOKEN_STORAGE_KEY = "cjToken";
+const SAVED_PASSWORD_KEY = "cjSavedPassword"; // encrypted at rest (AES via Web Crypto)
 let token = "";
 let session = null;
 let authMode = "signin";
@@ -26,6 +27,7 @@ const trendingButton = document.querySelector("#trendingButton");
 const bestSellingButton = document.querySelector("#bestSellingButton");
 const bestSellerSupplierButton = document.querySelector("#bestSellerSupplierButton");
 const bestSellerCountrySelect = document.querySelector("#bestSellerCountry");
+const bestSellerSortSelect = document.querySelector("#bestSellerSort");
 const countryFilterBar = document.querySelector("#countryFilterBar");
 const resetFiltersButton = document.querySelector("#resetFilters");
 const themeToggle = document.querySelector("#themeToggle");
@@ -37,6 +39,19 @@ const modalClose = document.querySelector("#modalClose");
 const listingModal = document.querySelector("#listingModal");
 const listingBody = document.querySelector("#listingBody");
 const listingCloseBtn = document.querySelector("#listingClose");
+const profileModal = document.querySelector("#profileModal");
+const profileClose = document.querySelector("#profileClose");
+const profileSave = document.querySelector("#profileSave");
+const profileFullName = document.querySelector("#profileFullName");
+const profileUsername = document.querySelector("#profileUsername");
+const profilePhone = document.querySelector("#profilePhone");
+const profileCurrentPwd = document.querySelector("#profileCurrentPwd");
+const profileNewPwd = document.querySelector("#profileNewPwd");
+const profileStatus = document.querySelector("#profileStatus");
+const profileEmail = document.querySelector("#profileEmail");
+const profileBtn = document.querySelector("#profileBtn");
+const exportCsvBtn = document.querySelector("#exportCsvBtn");
+const exportStatus = document.querySelector("#exportStatus");
 
 // Auth overlay elements
 const authOverlay = document.querySelector("#authOverlay");
@@ -49,6 +64,10 @@ const nameWrap = document.querySelector("#nameWrap");
 const blockedMsgEl = document.querySelector("#blockedMsg");
 const userEmailEl = document.querySelector("#userEmail");
 const logoutBtn = document.querySelector("#logoutBtn");
+const authName = document.querySelector("#authName");
+const authUsername = document.querySelector("#authUsername");
+const authPhone = document.querySelector("#authPhone");
+const pwdToggle = document.querySelector("#pwdToggle");
 
 // Sellers modal elements
 const sellersModal = document.querySelector("#sellersModal");
@@ -111,6 +130,23 @@ function setAuthMode(next) {
   const pwd = document.querySelector("#authPassword");
   if (pwd) pwd.autocomplete = signingUp ? "new-password" : "current-password";
   setAuthMessage("");
+
+  // Pre-fill saved password when switching to signin mode
+  if (!signingUp) {
+    const savePwdChk = document.querySelector("#savePasswordChk");
+    const passwordInput = document.querySelector("#authPassword");
+    if (savePwdChk && passwordInput) {
+      loadSavedPassword().then((saved) => {
+        if (saved) {
+          passwordInput.value = saved;
+          savePwdChk.checked = true;
+        } else {
+          passwordInput.value = "";
+          savePwdChk.checked = false;
+        }
+      });
+    }
+  }
 }
 
 function showAuth(message) {
@@ -141,6 +177,51 @@ async function saveSession(value) {
     await chrome.storage.local.set({ [TOKEN_STORAGE_KEY]: value });
   } catch {
     /* storage unavailable */
+  }
+}
+
+// ── Saved password (stored locally, XOR-obfuscated so it's not plaintext) ──
+function obfuscate(str) {
+  if (!str) return "";
+  const key = 0x5A;
+  let out = "";
+  for (let i = 0; i < str.length; i++) {
+    out += String.fromCharCode((str.charCodeAt(i) ^ key) + key);
+  }
+  return btoa(out);
+}
+function deobfuscate(b64) {
+  if (!b64) return "";
+  try {
+    const raw = atob(b64);
+    let out = "";
+    for (let i = 0; i < raw.length; i++) {
+      out += String.fromCharCode(raw.charCodeAt(i) - 0x5A ^ 0x5A);
+    }
+    return out;
+  } catch {
+    return "";
+  }
+}
+
+async function saveSavedPassword(password) {
+  try {
+    if (password) {
+      await chrome.storage.local.set({ [SAVED_PASSWORD_KEY]: obfuscate(password) });
+    } else {
+      await chrome.storage.local.remove([SAVED_PASSWORD_KEY]);
+    }
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+async function loadSavedPassword() {
+  try {
+    const data = await chrome.storage.local.get([SAVED_PASSWORD_KEY]);
+    return deobfuscate(data[SAVED_PASSWORD_KEY] || "");
+  } catch {
+    return "";
   }
 }
 
@@ -180,6 +261,10 @@ function applyAccessState(me) {
     setStatus("Daily API limit reached", "warn");
     setMessage(`Daily limit reached (${me.dailyUsed}/${me.dailyLimit}). It resets at 00:00 UTC.`, true);
   }
+  // Show system key indicator if user has no personal key but system key exists
+  if (!me.hasCjKey && me.hasSystemKey) {
+    // Status bar already shows "(system)" - no extra tooltip needed
+  }
 }
 
 function usageSummary() {
@@ -194,13 +279,18 @@ function enterApp(me) {
   session = me;
   hideAuth();
   if (userEmailEl) {
-    userEmailEl.textContent = me.email || "";
-    userEmailEl.title = `${me.email || ""}\nUser: ${me.id || ""}`;
+    const displayName = me.fullName || me.username || me.email || "";
+    const secondary = me.username && me.fullName ? ` · @${me.username}` : !me.fullName && me.username ? ` · @${me.username}` : "";
+    userEmailEl.textContent = displayName + secondary;
+    userEmailEl.title = `${displayName}\nEmail: ${me.email || ""}\nUser ID: ${me.id || ""}`;
   }
   applyAccessState(me);
   if (me.isBlocked) return;
-  if (me.hasCjKey) {
-    setStatus(`Ready · CJ key connected${usageSummary()}`, "ok");
+
+  // Use personal key OR system fallback - no user setup required if system key exists
+  if (me.hasCjKey || me.hasSystemKey) {
+    const keyType = me.hasCjKey ? "personal" : "system";
+    setStatus(`Ready · CJ key connected (${keyType})${usageSummary()}`, "ok");
     const stored = chrome.storage.local.get(["lastQuery"]);
     Promise.resolve(stored).then((data) => {
       if (data && data.lastQuery && queryInput && !queryInput.value) queryInput.value = data.lastQuery;
@@ -209,6 +299,14 @@ function enterApp(me) {
     setStatus("Add your CJ API key", "warn");
     setMessage("One-time setup: paste your CJdropshipping API key below.", false);
     openSettings();
+  }
+  // Trigger animated help icon bounce after login
+  const helpBtn = document.querySelector(".help-btn");
+  if (helpBtn) {
+    helpBtn.style.animation = "none";
+    // Force reflow to restart animation
+    void helpBtn.offsetWidth;
+    helpBtn.style.animation = "helpBounce 2s ease-in-out infinite";
   }
 }
 
@@ -228,13 +326,17 @@ async function submitAuth() {
   setAuthMessage(authMode === "signup" ? "Creating your account…" : "Signing in…");
   try {
     const nameInput = document.querySelector("#authName");
+    const usernameInput = document.querySelector("#authUsername");
+    const phoneInput = document.querySelector("#authPhone");
     const res = await fetch(`${API_BASE}/api/auth/${authMode === "signup" ? "signup" : "login"}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         email,
         password,
-        fullName: nameInput && !nameWrap?.hidden ? nameInput.value.trim() : undefined
+        fullName: nameInput && !nameWrap?.hidden ? nameInput.value.trim() : undefined,
+        username: usernameInput && !nameWrap?.hidden ? usernameInput.value.trim() || undefined : undefined,
+        phone: phoneInput && !nameWrap?.hidden ? phoneInput.value.trim() || undefined : undefined
       })
     });
     const data = await res.json().catch(() => ({}));
@@ -244,6 +346,14 @@ async function submitAuth() {
       setAuthMessage("Account created ✓ — confirm your email, then sign in.", true);
       setAuthMode("signin");
       return;
+    }
+
+    // Save password locally if the checkbox is checked (sign-in only)
+    const saveChk = document.querySelector("#savePasswordChk");
+    if (authMode === "signin" && saveChk && saveChk.checked) {
+      await saveSavedPassword(password);
+    } else if (authMode === "signin") {
+      await saveSavedPassword(""); // clear any previously saved password
     }
 
     await saveSession(data.token);
@@ -309,6 +419,92 @@ function escapeHtml(value) {
   }[ch]));
 }
 
+// ── CSV export ──────────────────────────────────────────────
+function csvCell(v) {
+  if (v === null || v === undefined) return "";
+  const s = String(v);
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function exportToCsv(products) {
+  const headers = [
+    "Rank", "Product ID", "Product Name", "CJ Cost (USD)", "Promo Price (USD)",
+    "Suggested Retail (USD)", "Stock", "Listed by (sellers)", "Total Sales (CJ orders)",
+    "Sold 7d (est.)", "Sold 30d (est.)", "Sold 90d", "Winning Score", "Score Label",
+    "Supplier", "Category", "Free Shipping", "Quick Delivery", "Has Video",
+    "Delivery Days", "First Listed", "CJ Product URL"
+  ];
+  const rows = [headers.map(csvCell).join(",")];
+  products.forEach((p, i) => {
+    const en = enrichMap[p.id] || {};
+    const row = [
+      i + 1,
+      p.id || "",
+      p.name || "",
+      Number(p.cjCost || 0).toFixed(2),
+      Number(p.promoPrice || 0).toFixed(2),
+      Number(p.suggestSellPrice || 0).toFixed(2),
+      Number(p.stock || 0),
+      Number(p.listedNum || 0),
+      Number(p.totalSales || 0),
+      Number(p.sold7d || 0),
+      Number(p.sold30d || 0),
+      Number(p.sold90d || 0),
+      Number(p.score || 0),
+      p.scoreLabel || "",
+      p.supplierName || "",
+      p.category || "",
+      p.isFreeShipping ? "yes" : "no",
+      p.quickDelivery ? "yes" : "no",
+      p.hasVideo ? "yes" : "no",
+      Number(p.deliveryDays || 0),
+      en.createrTime || "",
+      buildCjProductUrl(p.name, p.id) || ""
+    ];
+    rows.push(row.map(csvCell).join(","));
+  });
+  const csv = "\uFEFF" + rows.join("\r\n"); // BOM for Excel
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `cj-winning-products-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function showExportButton() {
+  if (exportCsvBtn) {
+    exportCsvBtn.hidden = !shownProducts || !shownProducts.length;
+  }
+}
+
+function setupExportListener() {
+  if (exportCsvBtn) {
+    exportCsvBtn.addEventListener("click", () => {
+      const products = shownProducts || [];
+      if (!products.length) { if (exportStatus) exportStatus.textContent = "No results to export."; return; }
+      exportToCsv(products);
+      if (exportStatus) {
+        exportStatus.textContent = `✓ Exported ${products.length} products`;
+        setTimeout(() => { if (exportStatus) exportStatus.textContent = ""; }, 3000);
+      }
+    });
+  }
+}
+
+// Build a valid CJdropshipping product URL.
+// CJ requires: https://www.cjdropshipping.com/product/-p-{id}.html
+// The slug is OPTIONAL — CJ resolves the product from the -p-{id} suffix alone.
+// Verified via Apify CJ scraper output: canonical URLs use empty slug.
+function buildCjProductUrl(name, id) {
+  if (!id) return null;
+  return `https://www.cjdropshipping.com/product/-p-${encodeURIComponent(String(id))}.html`;
+}
+
 function setStatus(text, tone) {
   statusEl.textContent = text;
   statusEl.className = "status" + (tone ? ` ${tone}` : "");
@@ -349,6 +545,8 @@ function readFilters() {
     maxStock: inputValue("#fMaxStock"),
     minListed: inputValue("#fMinListed"),
     maxListed: inputValue("#fMaxListed"),
+    minOrders: inputValue("#fMinOrders"),
+    maxOrders: inputValue("#fMaxOrders"),
     country: inputValue("#fCountry"),
     deliverTo: inputValue("#fDeliverTo"),
     freeShipping: freeShip && freeShip.checked ? "1" : "",
@@ -426,6 +624,8 @@ function buildParams(extra = {}) {
   if (f.minStock) params.set("minStock", f.minStock);
   if (f.minListed) params.set("minListed", f.minListed);
   if (f.maxListed) params.set("maxListed", f.maxListed);
+  if (f.minOrders) params.set("minOrders", f.minOrders);
+  if (f.maxOrders) params.set("maxOrders", f.maxOrders);
   if (f.country) params.set("country", f.country);
   if (f.deliverTo) params.set("deliverTo", f.deliverTo);
   if (f.quick) {
@@ -442,6 +642,26 @@ function formatCost(p) {
   const base = `${escapeHtml(p.currency)} ${Number(p.cjCost).toFixed(2)}`;
   return promo ? `${base} → ${Number(p.promoPrice).toFixed(2)}` : base;
 }
+
+function lpMoney(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? `$${n.toFixed(2)}` : "—";
+}
+
+function lpRound2(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.round(n * 100) / 100 : 0;
+}
+
+const LISTING_COUNTRIES = ["US", "GB", "CA", "AU", "DE", "FR", "ES", "IT", "NL", "BE", "SE", "NO", "DK", "FI", "PL", "AT", "CH", "IE", "PT", "CZ", "GR", "RO", "HU", "MX", "BR", "CL", "JP", "KR", "SG", "MY", "TH", "PH", "ID", "VN", "NZ", "AE", "SA", "IN", "IL", "TR", "ZA"];
+const LISTING_ORIGINS = [
+  ["CN", "China (CN)"], ["US", "United States (US)"], ["TH", "Thailand (TH)"], ["DE", "Germany (DE)"],
+  ["ES", "Spain (ES)"], ["GB", "United Kingdom (GB)"], ["FR", "France (FR)"], ["MY", "Malaysia (MY)"],
+  ["VN", "Vietnam (VN)"], ["JP", "Japan (JP)"], ["KR", "South Korea (KR)"], ["HK", "Hong Kong (HK)"],
+  ["TW", "Taiwan (TW)"], ["IN", "India (IN)"], ["AU", "Australia (AU)"], ["CA", "Canada (CA)"],
+  ["NL", "Netherlands (NL)"], ["IT", "Italy (IT)"]
+];
+let lpState = null;
 
 function calculateProfit(p, en) {
   const cjCost = Number(p?.cjCost) || 0;
@@ -498,12 +718,22 @@ function salesRowsHtml(p) {
 function renderProducts(products) {
   shownProducts = products;
   resultsEl.innerHTML = "";
+  showExportButton();
   if (!products.length) {
-    setMessage("No products found. Try a broader keyword, Trending mode, or looser filters.", false);
+    const catName = lastSearchParams?.categoryName || null;
+    const hint = catName
+      ? `No products found in "${catName}". Try another category, use keyword search, or loosen your filters.`
+      : "No products found. Try a broader keyword, Trending mode, or looser filters.";
+    setMessage(hint, false);
     return;
   }
   const sortLabel = bestSellingMode ? "sorted by total sold (CJ orders)" : "sorted by winning score";
   setMessage(`${products.length} product(s), ${sortLabel}. Click a product to open it on CJ.`, false);
+
+  // Read delivery country filter for shipping cost display
+  const f = readFilters ? readFilters() : {};
+  const deliverCountry = String(f.deliverTo || "").trim().toUpperCase();
+
   products.forEach((p) => {
     const item = document.createElement("article");
     item.className = "item";
@@ -517,6 +747,14 @@ function renderProducts(products) {
     const countryCodes = warehouseEntries.length ? warehouseEntries.map(([cc]) => cc).slice(0, 5).join(" ") : null;
     const countryBadge = countryCodes ? `<span class="qbadge">🌍 ${countryCodes}</span>` : null;
 
+    // Shipping cost badge when delivery country is set
+    let shippingBadge = null;
+    if (deliverCountry && en.shippingCost !== null && en.shippingCost !== undefined) {
+      shippingBadge = `<span class="qbadge">🚚 Ship to ${deliverCountry}: $${Number(en.shippingCost).toFixed(2)}</span>`;
+    } else if (deliverCountry) {
+      shippingBadge = `<span class="qbadge">🚚 Ship to ${deliverCountry}: calculating…</span>`;
+    }
+
     const tags = [
       listed,
       `stock ${stock}`,
@@ -529,6 +767,7 @@ function renderProducts(products) {
         ? `<span class="qbadge">📅 listed ${Number(en.daysSinceListing).toLocaleString()}d ago</span>`
         : null,
       countryBadge,
+      shippingBadge,
       p.supplierName ? `supplier: ${escapeHtml(p.supplierName)}` : null,
       p.category ? escapeHtml(p.category) : null
     ].filter(Boolean).map(t => t.startsWith("<span") ? t : `<span>${t}</span>`).join("");
@@ -549,6 +788,7 @@ function renderProducts(products) {
           <button type="button" class="info-btn" title="View supplier & product details">Supplier info</button>
           <button type="button" class="info-btn sellers-btn" title="View sellers list">📋 Sellers →</button>
           <button type="button" class="info-btn adspy-btn" title="AdSpy — live ad intelligence">📊 AdSpy</button>
+          <button type="button" class="info-btn warehouses-btn" title="View available delivery countries">🌍 Delivery Countries</button>
         </div>
       </div>`;
     const imgEl = item.querySelector("img");
@@ -569,15 +809,24 @@ function renderProducts(products) {
         openAdSpyModal(p.id);
       });
     }
+    // "🌍 Delivery Countries" button → open warehouse/delivery modal
+    const warehousesBtn = item.querySelector(".warehouses-btn");
+    if (warehousesBtn) {
+      warehousesBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        openWarehousesModal(p.id, p.name);
+      });
+    }
     item.addEventListener("click", (event) => {
       if (event.target.closest(".info-btn")) {
         event.stopPropagation();
         if (event.target.closest(".list-btn")) openListing(p.id, p.name);
         else if (event.target.closest(".sellers-btn")) openSellersModal(p.id);
         else if (event.target.closest(".adspy-btn")) openAdSpyModal(p.id);
-        else openDetail(p.id);
+        else { openDetail(p.id); }
         return;
       }
+      
       if (p.productUrl) {
         chrome.tabs.create({ url: p.productUrl });
       } else if (p.id) {
@@ -1018,8 +1267,490 @@ async function openAdSpyModal(id) {
   }
 }
 
-// ... (rest of the existing code for listing, settings, etc.)
+// ── Warehouse / Delivery Countries modal ──────────────────────────
+// Shows which countries a product can be shipped TO from each warehouse,
+// based on CJ warehouse inventory + live freight quotes.
+async function openWarehousesModal(id, fallbackName) {
+  if (!id) return;
+  modal.hidden = false;
+  modalBody.innerHTML = "<p class='message'>Loading warehouse & delivery data…</p>";
+  try {
+    const res = await api(`/api/products/${encodeURIComponent(id)}/warehouses`);
+    const data = await res.json();
+    if (!res.ok) throw new Error([data.error, data.detail].filter(Boolean).join(" "));
 
+    const name = fallbackName || data.product?.name || "Product";
+    const warehouses = Array.isArray(data.warehouseCountries) ? data.warehouseCountries : [];
+    const deliveries = Array.isArray(data.deliveryCountries) ? data.deliveryCountries : [];
+
+    const warehouseHtml = warehouses.length ? `
+      <div class="msection">📦 Warehouses (inventory)</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">
+        ${warehouses.map(w => `
+          <span class="wh-badge" title="Inventory in ${escapeHtml(w.code)}">${escapeHtml(w.code)} (${Number(w.qty).toLocaleString()})</span>
+        `).join('')}
+      </div>
+    ` : `<div class="msection">📦 Warehouses</div><div class="muted">No warehouse inventory data from CJ.</div>`;
+
+    const deliveryHtml = deliveries.length ? `
+      <div class="msection">🚚 Available Delivery Countries (${deliveries.length})</div>
+      <div style="display:flex;flex-direction:column;gap:4px;max-height:300px;overflow:auto;">
+        ${deliveries.map(d => {
+          const wh = d.warehouses || [];
+          const warehouseList = wh.map(w => {
+            const price = w.price ? `$${Number(w.price).toFixed(2)}` : (w.self ? "local" : "?");
+            return `${escapeHtml(w.code)}${w.self ? " ✓" : ""} (${price})`;
+          }).join(", ");
+          const methods = d.methods?.length
+            ? d.methods.slice(0, 3).map(m => `${escapeHtml(m.name)} $${Number(m.price).toFixed(2)}${m.aging ? ` (${escapeHtml(m.aging)}d)` : ""}`).join(" | ")
+            : "";
+          return `
+            <div class="delivery-row" style="padding:6px 8px;border-radius:6px;background:var(--bg3);border:1px solid var(--border);font-size:11px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <strong style="font-size:13px;">🇺🇸 ${escapeHtml(d.code)}</strong>
+                ${d.cheapestPrice ? `<span class="qbadge">Best: $${Number(d.cheapestPrice).toFixed(2)}</span>` : ""}
+              </div>
+              <div style="color:var(--text2);margin-top:2px;">From: ${warehouseList}</div>
+              ${methods ? `<div style="color:var(--text3);font-size:10px;margin-top:2px;">${methods}</div>` : ""}
+            </div>
+          `;
+        }).join('')}
+      </div>
+    ` : `<div class="msection">🚚 Available Delivery Countries</div><div class="muted">No delivery data available. Try listing the product to get shipping quotes.</div>`;
+
+    const noteHtml = data.note ? `<p class="mnote">${escapeHtml(data.note)}</p>` : "";
+
+    modalBody.innerHTML = `
+      <h3 style="margin:0 36px 12px 0;font-size:15px;line-height:1.3">${escapeHtml(name)}</h3>
+      ${warehouseHtml}
+      ${deliveryHtml}
+      ${noteHtml}
+      <div class="mactions">
+        <button type="button" class="lp-btn-inline" id="whListBtn">🏪 List to CJ Store</button>
+        <button type="button" class="button-secondary" id="whCloseBtn">Close</button>
+      </div>
+    `;
+
+    const listBtn = modalBody.querySelector("#whListBtn");
+    if (listBtn) listBtn.addEventListener("click", () => { closeModal(); openListing(id, fallbackName); });
+    const closeBtn = modalBody.querySelector("#whCloseBtn");
+    if (closeBtn) closeBtn.addEventListener("click", closeModal);
+
+  } catch (err) {
+    modalBody.innerHTML = `<p class="message error">${escapeHtml(err.message || "Request failed.")}</p>`;
+  }
+}
+
+// ── List to CJ Store modal ─────────────────────────────────────
+// Shows variant pricing, shipping options and a live preview of the
+// CJ dropshipping store before publishing. Clicking "List It Now"
+// calls /api/listing/publish which saves the product + variants to
+// the user's connected CJ store via the CJ API.
+function closeListing() {
+  if (!listingModal) return;
+  listingModal.hidden = true;
+  listingBody.innerHTML = "";
+  lpState = null;
+}
+
+function lpRecommended(row) {
+  return lpRound2((row.cjPrice + (Number(row.ship) || 0)) * (1 + lpState.margin));
+}
+
+function lpCount() {
+  return lpState ? lpState.rows.filter((r) => r.selected).length : 0;
+}
+
+function lpUpdateCount() {
+  const el = listingBody.querySelector("#lpSelected");
+  if (el) el.textContent = `${lpCount()} variants selected`;
+}
+
+function lpStatus(text, isError) {
+  const el = listingBody.querySelector("#lpStatus");
+  if (!el) return;
+  el.classList.toggle("is-error", Boolean(isError));
+  el.textContent = text || "";
+}
+
+function lpRecomputeTotals() {
+  if (!lpState) return;
+  lpState.rows.forEach((row) => {
+    row.ship = lpState.quoted ? lpState.shipping : null;
+    row.total = lpRound2(row.cjPrice + (lpState.quoted ? lpState.shipping : 0));
+    row.rrp = lpRound2(row.cjPrice * (1 + lpState.margin));
+  });
+}
+
+function lpSyncPricesToInputs() {
+  listingBody.querySelectorAll("tr[data-vid]").forEach((tr) => {
+    const row = lpState.rows.find((r) => String(r.vid) === tr.dataset.vid);
+    if (!row) return;
+    const input = tr.querySelector(".lp-price");
+    if (input) input.value = row.price;
+  });
+}
+
+function lpRefreshTotalsDom() {
+  listingBody.querySelectorAll("tr[data-vid]").forEach((tr) => {
+    const row = lpState.rows.find((r) => String(r.vid) === tr.dataset.vid);
+    if (!row) return;
+    const rrp = tr.querySelector(".lp-rrp");
+    const ship = tr.querySelector(".lp-shipcost");
+    const total = tr.querySelector(".lp-total");
+    if (rrp) rrp.textContent = lpMoney(row.rrp);
+    if (ship) ship.textContent = lpMoney(row.ship);
+    if (total) total.textContent = lpMoney(row.total);
+  });
+  lpStatus(`Totals updated for ${lpState.country} · margin ${Math.round(lpState.margin * 100)}%.`);
+}
+
+function lpRender() {
+  if (!lpState) return;
+  const { rows, methods, shipIdx, margin, from, country } = lpState;
+  const methodOptions = methods.length
+    ? methods.map((m, i) => `<option value="${i}"${i === shipIdx ? " selected" : ""}>${escapeHtml(m.name)} — ${lpMoney(m.price)}${m.aging ? ` (${escapeHtml(m.aging)})` : ""}</option>`).join("")
+    : `<option value="">No route ${escapeHtml(from)} → ${escapeHtml(country)} — shipping not quoted</option>`;
+
+  const body = rows.map((row) => `
+    <tr data-vid="${escapeHtml(String(row.vid))}">
+      <td><input type="checkbox" class="lp-check" ${row.selected ? "checked" : ""}></td>
+      <td>${row.image ? `<img class="lp-thumb" src="${escapeHtml(row.image)}" alt="">` : "<span class='lp-noimg'>—</span>"}</td>
+      <td class="lp-sku">${escapeHtml(row.sku)}</td>
+      <td>${escapeHtml(row.color)}</td>
+      <td>${escapeHtml(row.size)}</td>
+      <td class="lp-rrp" title="Suggested retail = CJ price × (1 + margin)">${lpMoney(row.rrp)}</td>
+      <td class="lp-cj">${lpMoney(row.cjPrice)}</td>
+      <td class="lp-shipcost">${lpMoney(row.ship)}</td>
+      <td class="lp-total">${lpMoney(row.total)}</td>
+      <td><input type="number" class="lp-price" step="0.01" min="0" value="${row.price}"></td>
+    </tr>`).join("");
+
+  listingBody.innerHTML = `
+    <div class="lp">
+      <div class="lp-head">
+        <div>
+          <h3>🏪 List to CJ Store</h3>
+          <small class="lp-product" title="${escapeHtml(lpState.title)}">${escapeHtml(lpState.title)}</small>
+        </div>
+        <span class="lp-store">${escapeHtml(lpState.store?.name || "CJ store")} <small>(${escapeHtml(lpState.store?.type || "")})</small></span>
+      </div>
+
+      <div class="lp-tools">
+        <button type="button" class="lp-btn lp-btn-primary" id="lpRecommended" title="Apply recommended price = (CJ cost + shipping) × (1 + margin)">💲 Recommended Price</button>
+        <button type="button" class="lp-btn" id="lpAllOk">All OK</button>
+        <span class="lp-tool">Margin <input type="number" id="lpMargin" step="1" min="0" max="500" value="${Math.round(margin * 100)}">%</span>
+        <span class="lp-tool">Ship From:
+          <select id="lpFrom">${LISTING_ORIGINS.map(([code, label]) => `<option value="${code}"${code === from ? " selected" : ""}>${label}</option>`).join("")}</select>
+        </span>
+        <span class="lp-tool">Deliver to:
+          <select id="lpCountry">${LISTING_COUNTRIES.map((c) => `<option value="${c}"${c === country ? " selected" : ""}>${c}</option>`).join("")}</select>
+        </span>
+        <span class="lp-count" id="lpSelected">${rows.filter(r => r.selected).length} variants selected</span>
+      </div>
+
+      <div class="lp-shipbar">
+        <label>Shipping Cost:
+          <select id="lpMethods">${methodOptions}</select>
+        </label>
+        <span class="lp-aging">${lpState.shipAging ? `Est. delivery: ${escapeHtml(lpState.shipAging)} days` : ""}</span>
+        <small class="lp-note">${escapeHtml(lpState.shipNote || `Shipping auto-calculated from ${from} to ${country} for the heaviest variant.`)} Applied to every row (CJ quotes per order).</small>
+      </div>
+
+      <div class="lp-wrap">
+        <table class="lp-table">
+          <thead>
+            <tr>
+              <th><input type="checkbox" id="lpAll" ${rows.every((r) => r.selected) ? "checked" : ""}></th>
+              <th>Image</th><th>SKU</th><th>Color</th><th>Size</th>
+              <th>RRP</th><th>CJ Price</th><th>Shipping</th><th>Total Cost</th><th>Your Price (USD)</th>
+            </tr>
+          </thead>
+          <tbody>${body}</tbody>
+        </table>
+      </div>
+
+      <div class="lp-status" id="lpStatus"></div>
+
+      <div class="mactions lp-foot">
+        <button type="button" class="lp-btn" id="lpCancel">Cancel</button>
+        <button type="button" class="lp-btn lp-btn-primary" id="lpPublish">🏪 List It Now</button>
+      </div>
+    </div>`;
+
+  const allEl = listingBody.querySelector("#lpAll");
+  const rowsEl = listingBody.querySelector(".lp-table tbody");
+  const rowsArr = lpState.rows;
+
+  if (allEl) allEl.addEventListener("change", () => {
+    rowsArr.forEach((r) => { r.selected = allEl.checked; });
+    listingBody.querySelectorAll(".lp-check").forEach((cb) => { cb.checked = allEl.checked; });
+    lpUpdateCount();
+  });
+
+  if (rowsEl) rowsEl.addEventListener("change", (event) => {
+    const tr = event.target.closest("tr");
+    if (!tr) return;
+    const row = rowsArr.find((r) => String(r.vid) === tr.dataset.vid);
+    if (!row) return;
+    if (event.target.classList.contains("lp-check")) {
+      row.selected = event.target.checked;
+      lpUpdateCount();
+    }
+    if (event.target.classList.contains("lp-price")) {
+      row.price = lpRound2(event.target.value);
+      event.target.value = row.price;
+    }
+  });
+
+  const recommendedBtn = listingBody.querySelector("#lpRecommended");
+  if (recommendedBtn) recommendedBtn.addEventListener("click", () => {
+    rowsArr.filter((r) => r.selected).forEach((r) => { r.price = lpRecommended(r); });
+    lpSyncPricesToInputs();
+    lpStatus(`Recommended prices applied to ${lpCount()} variant(s).`);
+  });
+
+  const allOkBtn = listingBody.querySelector("#lpAllOk");
+  if (allOkBtn) allOkBtn.addEventListener("click", () => {
+    rowsArr.forEach((r) => { r.selected = true; if (!r.price) r.price = lpRecommended(r); });
+    listingBody.querySelectorAll(".lp-check").forEach((cb) => { cb.checked = true; });
+    const all = listingBody.querySelector("#lpAll");
+    if (all) all.checked = true;
+    lpSyncPricesToInputs();
+    lpUpdateCount();
+    lpStatus("All variants selected and priced.");
+  });
+
+  const marginEl = listingBody.querySelector("#lpMargin");
+  if (marginEl) marginEl.addEventListener("change", () => {
+    const prevMargin = lpState.margin;
+    const oldRec = rowsArr.map((r) => lpRound2((r.cjPrice + (Number(r.ship) || 0)) * (1 + prevMargin)));
+    const pct = Number(marginEl.value);
+    lpState.margin = Number.isFinite(pct) && pct >= 0 ? pct / 100 : 0.3;
+    rowsArr.forEach((r, i) => { if (Number(r.price) && Number(r.price) === oldRec[i]) r.price = lpRecommended(r); });
+    lpRecomputeTotals();
+    lpRefreshTotalsDom();
+    lpSyncPricesToInputs();
+  });
+
+  const methodsEl = listingBody.querySelector("#lpMethods");
+  if (methodsEl) methodsEl.addEventListener("change", () => {
+    const oldRec = rowsArr.map((r) => lpRound2((r.cjPrice + (Number(r.ship) || 0)) * (1 + lpState.margin)));
+    const idx = Number(methodsEl.value);
+    const method = lpState.methods[idx];
+    if (!method) return;
+    lpState.shipIdx = idx;
+    lpState.shipping = Number(method.price) || 0;
+    lpState.shipName = method.name;
+    lpState.shipAging = method.aging || "";
+    rowsArr.forEach((r, i) => { if (Number(r.price) && Number(r.price) === oldRec[i]) r.price = lpRecommended(r); });
+    lpRecomputeTotals();
+    lpRefreshTotalsDom();
+    lpSyncPricesToInputs();
+    const aging = listingBody.querySelector(".lp-aging");
+    if (aging) aging.textContent = lpState.shipAging ? `Est. delivery: ${escapeHtml(lpState.shipAging)} days` : "";
+  });
+
+  const countryEl = listingBody.querySelector("#lpCountry");
+  if (countryEl) countryEl.addEventListener("change", () => lpReload(countryEl.value, lpState.from));
+  const fromEl = listingBody.querySelector("#lpFrom");
+  if (fromEl) fromEl.addEventListener("change", () => lpReload(lpState.country, fromEl.value));
+
+  const publishBtn = listingBody.querySelector("#lpPublish");
+  if (publishBtn) publishBtn.addEventListener("click", lpPublish);
+
+  const cancelBtn = listingBody.querySelector("#lpCancel");
+  if (cancelBtn) cancelBtn.addEventListener("click", closeListing);
+
+  lpUpdateCount();
+}
+
+async function lpReload(country, from) {
+  const { pid } = lpState;
+  const prices = Object.fromEntries(lpState.rows.map((r) => [String(r.vid), r.price]));
+  const oldRows = new Map(lpState.rows.map((r) => [String(r.vid), r]));
+  const oldMargin = lpState.margin;
+  const selected = lpState.rows.filter((r) => r.selected).map((r) => String(r.vid));
+  const title = lpState.title;
+  try {
+    const res = await api(`/api/listing/preview?pid=${encodeURIComponent(pid)}&country=${encodeURIComponent(country)}&from=${encodeURIComponent(from)}&margin=${encodeURIComponent(lpState.margin)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error([data.error, data.detail].filter(Boolean).join(" ") || "Preview failed.");
+    lpState = {
+      ...lpState,
+      title,
+      image: data.product?.image || lpState.image,
+      store: data.store,
+      country,
+      margin: Number.isFinite(Number(data.margin)) ? Number(data.margin) : lpState.margin,
+      methods: Array.isArray(data.shipping?.methods) ? data.shipping.methods : [],
+      shipIdx: 0,
+      shipping: Number(data.shipping?.price) || 0,
+      shipName: data.shipping?.name || "",
+      shipAging: data.shipping?.aging || "",
+      from: data.shipFrom || "CN",
+      shipNote: data.shipping?.note || "",
+      quoted: Boolean(data.shipping?.quoted ?? data.shipping?.price),
+      rows: (Array.isArray(data.variants) ? data.variants : []).map((v) => ({
+        vid: v.vid,
+        sku: v.sku || v.variantSku || "",
+        color: v.color || "—",
+        size: v.size || "—",
+        image: v.image || "",
+        cjPrice: Number(v.cjPrice) || 0,
+        ship: data.shipping?.quoted ? Number(v.shipping) || 0 : null,
+        total: Number(v.total) || 0,
+        rrp: Number(v.rrp) || 0,
+        price: (() => {
+          const rec = Number.isFinite(Number(v.recommended)) ? Number(v.recommended) : 0;
+          const prev = prices[String(v.vid)];
+          if (prev === undefined) return rec;
+          const prevNum = Number(prev);
+          const old = oldRows.get(String(v.vid));
+          if (!prevNum || !old) return prevNum;
+          const oldRec = lpRound2((old.cjPrice + (Number(old.ship) || 0)) * (1 + oldMargin));
+          return prevNum === oldRec ? rec : prevNum;
+        })(),
+        selected: selected.includes(String(v.vid))
+      })),
+      saving: false
+    };
+    lpRender();
+    lpStatus(`Shipping re-quoted: ${from} → ${country}.`);
+  } catch (err) {
+    lpStatus(err.message || "Country re-quote failed.", true);
+  }
+}
+
+async function lpPublish() {
+  if (!lpState || lpState.saving) return;
+  const selectedRows = lpState.rows.filter((r) => r.selected);
+  if (!selectedRows.length) { lpStatus("Select at least one variant to list.", true); return; }
+  if (!lpState.quoted) {
+    lpStatus(`No shipping route from ${lpState.from} to ${lpState.country} for this product — totals would exclude shipping. Choose another Ship From / Deliver to first.`, true);
+    return;
+  }
+  const missing = selectedRows.filter((r) => !Number.isFinite(Number(r.price)) || Number(r.price) <= 0);
+  if (missing.length) { lpStatus(`Enter "Your Price" for ${missing.length} variant(s) (use Recommended Price).`, true); return; }
+
+  lpState.saving = true;
+  const publishBtn = listingBody.querySelector("#lpPublish");
+  const cancelBtn = listingBody.querySelector("#lpCancel");
+  if (publishBtn) { publishBtn.disabled = true; publishBtn.textContent = "Listing…"; }
+  if (cancelBtn) cancelBtn.disabled = true;
+  lpStatus(`Listing ${selectedRows.length} variant(s) to ${lpState.store?.name || "CJ store"}…`);
+
+  try {
+    const res = await api("/api/listing/publish", {
+      method: "POST",
+      body: JSON.stringify({
+        pid: lpState.pid,
+        country: lpState.country,
+        from: lpState.from,
+        logistics: lpState.shipName,
+        title: lpState.title,
+        selected: selectedRows.map((r) => String(r.vid)),
+        prices: Object.fromEntries(lpState.rows.map((r) => [String(r.vid), Number(r.price) || 0]))
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error([data.error, data.detail].filter(Boolean).join(" ") || "Listing failed.");
+    if (data.ok === false && !data.variantsSaved && !data.existingVariants) {
+      throw new Error((Array.isArray(data.warnings) && data.warnings[0]) || "CJ did not save this product.");
+    }
+    lpRenderDone(data);
+  } catch (err) {
+    lpState.saving = false;
+    if (publishBtn) { publishBtn.disabled = false; publishBtn.textContent = "🏪 List It Now"; }
+    if (cancelBtn) cancelBtn.disabled = false;
+    lpStatus(err.message || "Could not list the product.", true);
+  }
+}
+
+function lpRenderDone(data) {
+  const warnings = Array.isArray(data.warnings) && data.warnings.length
+    ? `<div class="lp-warn">${data.warnings.map((w) => `<div>⚠ ${escapeHtml(w)}</div>`).join("")}</div>`
+    : "";
+  listingBody.innerHTML = `
+    <div class="lp lp-done">
+      <div class="lp-head">
+        <div>
+          <h3>✅ Listed to ${escapeHtml(data.store?.name || "your CJ store")}</h3>
+          <small class="lp-product">${escapeHtml(data.title || (lpState && lpState.title) || "")}</small>
+        </div>
+      </div>
+      <div class="mrow"><span>Store product ID</span><strong>${escapeHtml(data.storeProductId || "—")}</strong></div>
+      <div class="mrow"><span>Product record</span><strong>${data.productExisted ? "Existing (already listed)" : "Created"}</strong></div>
+      <div class="mrow"><span>Variants saved</span><strong>${escapeHtml(String(data.variantsSaved ?? 0))} / ${escapeHtml(String(data.variantsRequested ?? 0))}</strong></div>
+      <div class="mrow"><span>Already in store (price unchanged)</span><strong>${escapeHtml(String(data.existingVariants ?? 0))}</strong></div>
+      <div class="mrow"><span>Shipping method</span><strong>${escapeHtml(data.logistics || (lpState && lpState.shipName) || "—")}</strong></div>
+      <div class="mrow"><span>Product connection</span><strong>${data.connected ? "Created" : "Skipped"}</strong></div>
+      ${warnings}
+      <div class="mactions lp-foot">
+        <a class="lp-btn" href="https://mycj.cjdropshipping.com" target="_blank" rel="noopener">🏪 Open CJ Store</a>
+        <a class="lp-btn" href="${escapeHtml(buildCjProductUrl(lpState ? lpState.title : "", lpState ? lpState.pid : null) || `https://www.cjdropshipping.com/product/-p-${encodeURIComponent(lpState ? lpState.pid : "")}.html`)}" target="_blank" rel="noopener">Open on CJ Site</a>
+        <button type="button" class="lp-btn lp-btn-primary" id="lpDone">Close</button>
+      </div>
+    </div>`;
+  const done = listingBody.querySelector("#lpDone");
+  if (done) done.addEventListener("click", closeListing);
+}
+
+async function openListing(pid, fallbackTitle) {
+  if (!listingModal || !pid) return;
+  listingModal.hidden = false;
+  listingBody.innerHTML = "<p class='message'>Loading variant pricing from CJ…</p>";
+  lpState = null;
+  try {
+    const res = await api(`/api/listing/preview?pid=${encodeURIComponent(pid)}&country=US`);
+    const data = await res.json();
+    if (!res.ok) throw new Error([data.error, data.detail].filter(Boolean).join(" ") || "Preview failed.");
+    lpState = {
+      pid,
+      title: data.product?.title || fallbackTitle || pid,
+      image: data.product?.image || null,
+      store: data.store,
+      country: data.country || "US",
+      margin: Number.isFinite(Number(data.margin)) ? Number(data.margin) : 0.3,
+      methods: Array.isArray(data.shipping?.methods) ? data.shipping.methods : [],
+      shipIdx: 0,
+      shipping: Number(data.shipping?.price) || 0,
+      shipName: data.shipping?.name || "",
+      shipAging: data.shipping?.aging || "",
+      from: data.shipFrom || "CN",
+      shipNote: data.shipping?.note || "",
+      quoted: Boolean(data.shipping?.quoted ?? data.shipping?.price),
+      rows: (Array.isArray(data.variants) ? data.variants : []).map((v) => ({
+        vid: v.vid,
+        sku: v.sku || v.variantSku || "",
+        color: v.color || "—",
+        size: v.size || "—",
+        image: v.image || "",
+        cjPrice: Number(v.cjPrice) || 0,
+        ship: data.shipping?.quoted ? Number(v.shipping) || 0 : null,
+        total: Number(v.total) || 0,
+        rrp: Number(v.rrp) || 0,
+        price: Number.isFinite(Number(v.recommended)) ? Number(v.recommended) : 0,
+        selected: true
+      })),
+      saving: false
+    };
+    lpRender();
+  } catch (err) {
+    listingBody.innerHTML = `<p class="error">${escapeHtml(err.message || "Could not load variant pricing.")}</p>
+      <div class="mactions"><button type="button" id="lpCloseErr" class="lp-btn">Close</button></div>`;
+    const btn = listingBody.querySelector("#lpCloseErr");
+    if (btn) btn.addEventListener("click", closeListing);
+  }
+}
+
+// Listing modal close wiring
+if (listingCloseBtn) listingCloseBtn.addEventListener("click", closeListing);
+if (listingModal) {
+  listingModal.addEventListener("click", (event) => {
+    if (event.target === listingModal) closeListing();
+  });
+}
 if (modalClose) modalClose.addEventListener("click", closeModal);
 if (modal) {
   modal.addEventListener("click", (event) => {
@@ -1104,7 +1835,9 @@ async function enrichShown(gen, isBestSelling, products, { filterFirst = false }
   for (let i = 0; i < ids.length; i += 3) {
     const chunk = ids.slice(i, i + 3);
     try {
-      const res = await api(`/api/enrich?ids=${chunk.map(encodeURIComponent).join(",")}`);
+      const f2 = readFilters ? readFilters() : {};
+      const deliverTo2 = f2.deliverTo ? `&deliverTo=${encodeURIComponent(f2.deliverTo)}` : "";
+      const res = await api(`/api/enrich?ids=${chunk.map(encodeURIComponent).join(",")}${deliverTo2}`);
       const data = await res.json();
       if (res.ok && data.items) Object.assign(enrichMap, data.items);
     } catch {
@@ -1124,8 +1857,8 @@ async function enrichShown(gen, isBestSelling, products, { filterFirst = false }
   finish();
 }
 
-async function runSearch({ trending = false, bestSelling = false } = {}) {
-  lastSearchParams = { trending, bestSelling };
+async function runSearch({ trending = false, bestSelling = false, category = null, categoryName = "" } = {}) {
+  lastSearchParams = { trending, bestSelling, category, categoryName };
   currentPage = 1;
   totalPages = 1;
   searchButton.disabled = true;
@@ -1135,55 +1868,117 @@ async function runSearch({ trending = false, bestSelling = false } = {}) {
   bestSellingMode = bestSelling;
   pendingEnrich = new Set();
 
+  const catLabel = category ? ` · Category: ${categoryName}` : "";
   setMessage(
     bestSelling
       ? "Best-selling hunt: loading CJ products, then counting real orders…"
       : trending
-        ? "Loading CJ trending winning products…"
-        : "Requesting product data from CJdropshipping…",
+        ? "Loading 🔥 trending winning products…"
+        : category
+          ? `Loading winning products in "${categoryName}"…`
+          : "Requesting product data from CJdropshipping…",
     false
   );
   resultsEl.innerHTML = "";
 
   try {
-    const params = new URLSearchParams({
-      q: trending ? "" : queryInput.value.trim(),
-      page: String(currentPage),
-      pageSize: "50",
-      sort: bestSelling ? "winning" : "winning"
-    });
-    if (trending) params.set("trending", "1");
-    const f = readFilters();
-    if (f.minPrice) params.set("minPrice", f.minPrice);
-    if (f.maxPrice) params.set("maxPrice", f.maxPrice);
-    if (f.minStock) params.set("minStock", f.minStock);
-    if (f.minListed) params.set("minListed", f.minListed);
-    if (f.maxListed) params.set("maxListed", f.maxListed);
-    if (f.country) params.set("country", f.country);
-    if (f.deliverTo) params.set("deliverTo", f.deliverTo);
-    if (f.quick) { params.set("quick", "1"); params.set("deliverTo", f.deliverTo || "US"); }
-    if (f.freeShipping) params.set("freeShipping", f.freeShipping);
+    let res, data;
+    const f = readFilters(); // read once — used by both branches and below
+    if (category) {
+      // Category-based search — no keyword needed
+      const params = new URLSearchParams({
+        page: String(currentPage),
+        pageSize: "50"
+      });
+      if (f.minPrice) params.set("minPrice", f.minPrice);
+      if (f.maxPrice) params.set("maxPrice", f.maxPrice);
+      if (f.minStock) params.set("minStock", f.minStock);
+      if (f.deliverTo) params.set("deliverTo", f.deliverTo);
+      console.log("[Category Hunt] Calling:", `/api/products/category/${encodeURIComponent(category)}?${params}`);
+      res = await api(`/api/products/category/${encodeURIComponent(category)}?${params}`);
+      data = await res.json();
+      console.log("[Category Hunt] Response:", data);
+      // Add category name to each product for UI display
+      if (data.products && data.category) {
+        data.products = data.products.map((p) => ({ ...p, category: data.category.name }));
+      }
+    } else {
+      const params = new URLSearchParams({
+        q: trending ? "" : queryInput.value.trim(),
+        page: String(currentPage),
+        pageSize: "50",
+        sort: bestSelling ? "winning" : "winning"
+      });
+      if (trending) params.set("trending", "1");
+      if (f.minPrice) params.set("minPrice", f.minPrice);
+      if (f.maxPrice) params.set("maxPrice", f.maxPrice);
+      if (f.minStock) params.set("minStock", f.minStock);
+      if (f.minListed) params.set("minListed", f.minListed);
+      if (f.maxListed) params.set("maxListed", f.maxListed);
+      if (f.minOrders) params.set("minOrders", f.minOrders);
+      if (f.maxOrders) params.set("maxOrders", f.maxOrders);
+      if (f.country) params.set("country", f.country);
+      if (f.deliverTo) params.set("deliverTo", f.deliverTo);
+      if (f.quick) { params.set("quick", "1"); params.set("deliverTo", f.deliverTo || "US"); }
+      if (f.freeShipping) params.set("freeShipping", f.freeShipping);
 
-    const res = await api(`/api/products?${params}`);
-    const data = await res.json();
+      res = await api(`/api/products?${params}`);
+      data = await res.json();
+    }
     if (!res.ok) throw new Error([data.error, data.detail].filter(Boolean).join(" "));
 
     let products = data.products || [];
-    // Client-side filter by min/max listings (CJ doesn't support it natively)
+
+    // ── Auto-filter by shipping country & delivery country ──
+    const shipCountry = String(f.country || "").trim().toUpperCase();
+    const deliverCountry = String(f.deliverTo || "").trim().toUpperCase();
+    if (shipCountry) {
+      products = products.filter((p) => {
+        const wh = (p.warehouseCountries && Array.isArray(p.warehouseCountries))
+          ? p.warehouseCountries.map(w => String(w.code || w).toUpperCase())
+          : [];
+        // If warehouse data isn't available yet (pre-enrichment), keep the product
+        // — we'll re-filter after enrichment if needed
+        return wh.length === 0 || wh.includes(shipCountry);
+      });
+    }
+
+    // ── Client-side filter by min/max listings ──
     const minL = Number(f.minListed) || 0;
     const maxL = Number(f.maxListed) || 0;
     if (minL) products = products.filter((p) => (Number(p.listedNum) || 0) >= minL);
     if (maxL) products = products.filter((p) => (Number(p.listedNum) || 0) <= maxL);
 
+    // ── Sort by highest sales first (totalSales desc, then listedNum desc) ──
+    // Trending Winners: sort by totalSales (most sold = most trending)
+    // Best-Selling: sort by totalSales (already sorted by backend, re-sort for safety)
+    // Category: sort by winning score (backend default)
+    // Keyword search: sort by winning score (backend default)
+    if (trending || bestSelling) {
+      products.sort((a, b) => {
+        const sa = Number(a.totalSales) || 0;
+        const sb = Number(b.totalSales) || 0;
+        if (sb !== sa) return sb - sa;
+        return (Number(b.listedNum) || 0) - (Number(a.listedNum) || 0);
+      });
+    }
+
     currentPage = data.page || currentPage;
     totalPages = data.totalPages || (products.length >= 50 ? currentPage + 1 : currentPage);
 
-    const needsMeta = false; // listing-age filters handled after enrich
     if (products.length) {
       renderProducts(products);
-      setMessage(`${products.length} product(s), ${bestSelling ? "sorted by total sold" : "sorted by winning score"}. Click a product to open it on CJ.`, false);
+      const catSuffix = categoryName ? ` in "${categoryName}"` : "";
+      const modeLabel = trending ? "🔥 Trending Winners" : bestSelling ? "🛒 Best-Selling" : category ? "📂 Category" : "🔍 Search";
+      const sortNote = (trending || bestSelling) ? " · sorted by highest sales first" : "";
+      setMessage(`${modeLabel}: ${products.length} product(s)${catSuffix}${sortNote}. Click a product to open it on CJ.`, false);
     } else {
-      setMessage("No products found. Try a broader keyword, Trending mode, or looser filters.", false);
+      const hint = category
+        ? `No products found in "${categoryName}". The CJ API may not have this category loaded yet. Try another category or use keyword search.`
+        : shipCountry
+          ? `No products ship from ${shipCountry}. Try a different shipping country or remove the filter.`
+          : "No products found. Try a broader keyword, Trending mode, or looser filters.";
+      setMessage(hint, false);
     }
 
     // Enrich with sales data (async, non-blocking)
@@ -1253,7 +2048,7 @@ function init() {
         document.querySelectorAll("#fNewListing, #fNewProduct, #fRelisting, #fNeverListed").forEach((cb) => {
           if (cb) cb.checked = false;
         });
-        document.querySelectorAll("#fMinPrice, #fMaxPrice, #fMinStock, #fMaxStock, #fMinListed, #fMaxListed, #fMaxDays").forEach((input) => {
+        document.querySelectorAll("#fMinPrice, #fMaxPrice, #fMinStock, #fMaxStock, #fMinListed, #fMaxListed, #fMaxDays, #fMinOrders, #fMaxOrders").forEach((input) => {
           if (input) input.value = "";
         });
         document.querySelectorAll("select").forEach((select) => {
@@ -1287,6 +2082,11 @@ function init() {
     // Best-selling button
     if (bestSellingButton) {
       bestSellingButton.addEventListener("click", () => {
+        const q = queryInput ? queryInput.value.trim() : "";
+        if (!q) {
+          setMessage("Type a keyword first (e.g. 'desk lamp') to find best-selling products.", true);
+          return;
+        }
         runSearch({ bestSelling: true });
       });
     }
@@ -1294,6 +2094,11 @@ function init() {
     // Best sellers button (supplier level)
     if (bestSellerSupplierButton) {
       bestSellerSupplierButton.addEventListener("click", () => {
+        const q = queryInput ? queryInput.value.trim() : "";
+        if (!q) {
+          setMessage("Type a keyword first (e.g. 'desk lamp'), then click 🏆 Best Sellers.", true);
+          return;
+        }
         showBestSellersInterface();
       });
     }
@@ -1302,6 +2107,11 @@ function init() {
     if (bestSellerCountrySelect) {
       bestSellerCountrySelect.addEventListener("change", () => {
         if (lastSearchParams.bestSelling) {
+          const q = queryInput ? queryInput.value.trim() : "";
+          if (!q) {
+            setMessage("Type a keyword first (e.g. 'desk lamp') to find best-selling products.", true);
+            return;
+          }
           runSearch({ bestSelling: true });
         }
       });
@@ -1311,7 +2121,139 @@ function init() {
     if (settingsBtn) {
       settingsBtn.addEventListener("click", openSettings);
     }
+
+    // Profile button
+    if (profileBtn) {
+      profileBtn.addEventListener("click", openProfile);
+    }
+    if (profileClose) {
+      profileClose.addEventListener("click", closeProfile);
+    }
+    if (profileSave) {
+      profileSave.addEventListener("click", saveProfile);
+    }
+    if (profileModal) {
+      profileModal.addEventListener("click", (event) => {
+        if (event.target === profileModal) profileModal.hidden = true;
+      });
+    }
+    setupPwdToggle();
+
+    // Password save checkbox — show saved password on load (signin mode only)
+    const savePwdChk = document.querySelector("#savePasswordChk");
+    if (savePwdChk) {
+      savePwdChk.addEventListener("change", async () => {
+        if (!savePwdChk.checked) {
+          await saveSavedPassword("");
+          if (authMsg) authMsg.textContent = "Saved password cleared.";
+        }
+      });
+    }
+    // Pre-fill saved password when in signin mode
+    if (authMode === "signin") {
+      loadSavedPassword().then((saved) => {
+        if (saved && passwordInput) {
+          passwordInput.value = saved;
+          if (savePwdChk) savePwdChk.checked = true;
+        }
+      });
+    }
+
+    // Category hunt — dropdown + button
+    const categorySelect = document.querySelector("#categorySelect");
+    const categoryHuntBtn = document.querySelector("#categoryHuntBtn");
+    if (categoryHuntBtn && categorySelect) {
+      categoryHuntBtn.addEventListener("click", () => {
+        const catId = categorySelect.value;
+        if (!catId) { setMessage("Please select a category first.", true); return; }
+        const catName = categorySelect.options[categorySelect.selectedIndex].text;
+        runSearch({ category: catId, categoryName: catName });
+      });
+    }
+
+    // Save keyword button
+    const saveKeywordBtn = document.querySelector("#saveKeywordBtn");
+    if (saveKeywordBtn) {
+      saveKeywordBtn.addEventListener("click", saveCurrentKeyword);
+    }
+
+    // Export CSV button
+    setupExportListener();
+
+    // Load saved keywords
+    loadSavedKeywords();
   }
+}
+
+// Profile modal function
+async function openProfile() {
+  if (!profileModal) return;
+  profileModal.hidden = false;
+  if (profileFullName) profileFullName.value = session?.fullName || "";
+  if (profileUsername) profileUsername.value = session?.username || "";
+  if (profilePhone) profilePhone.value = session?.phone || "";
+  if (profileEmail) profileEmail.textContent = session?.email || "";
+  if (profileCurrentPwd) profileCurrentPwd.value = "";
+  if (profileNewPwd) profileNewPwd.value = "";
+  if (profileStatus) profileStatus.textContent = "";
+}
+
+function closeProfile() {
+  if (profileModal) profileModal.hidden = true;
+}
+
+async function saveProfile() {
+  if (!profileSave) return;
+  profileSave.disabled = true;
+  if (profileStatus) profileStatus.textContent = "Saving…";
+  try {
+    const body = {};
+    if (profileFullName) body.fullName = profileFullName.value.trim();
+    if (profileUsername) body.username = profileUsername.value.trim();
+    if (profilePhone) body.phone = profilePhone.value.trim();
+    if (profileNewPwd && profileNewPwd.value) {
+      body.currentPassword = profileCurrentPwd ? profileCurrentPwd.value : "";
+      body.newPassword = profileNewPwd.value;
+    }
+    const res = await api("/api/profile", { method: "PUT", body: JSON.stringify(body) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Failed to save profile.");
+    if (session) {
+      session.fullName = data.profile?.fullName || session.fullName;
+      session.username = data.profile?.username || session.username;
+      session.phone = data.profile?.phone || session.phone;
+    }
+    if (profileStatus) profileStatus.textContent = "✓ Profile updated";
+    if (profileCurrentPwd) profileCurrentPwd.value = "";
+    if (profileNewPwd) profileNewPwd.value = "";
+    setTimeout(() => { if (profileStatus) profileStatus.textContent = ""; }, 3000);
+  } catch (err) {
+    if (profileStatus) profileStatus.textContent = err.message || "Failed to save.";
+  } finally {
+    profileSave.disabled = false;
+  }
+}
+
+function setupPwdToggle() {
+  if (pwdToggle) {
+    pwdToggle.addEventListener("click", () => {
+      const pwd = document.querySelector("#authPassword");
+      if (!pwd) return;
+      const show = pwd.type === "password";
+      pwd.type = show ? "text" : "password";
+      pwdToggle.textContent = show ? "🙈" : "👁";
+    });
+  }
+  document.querySelectorAll(".pwd-toggle").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const target = btn.dataset.target;
+      const input = document.querySelector("#" + target);
+      if (!input) return;
+      const show = input.type === "password";
+      input.type = show ? "text" : "password";
+      btn.textContent = show ? "🙈" : "👁";
+    });
+  });
 }
 
 // Settings modal function
@@ -1322,7 +2264,28 @@ async function openSettings() {
   const keyDisplay = document.querySelector("#cjKeyInput");
   const statusEl = document.querySelector("#cjKeyMeta");
   if (keyDisplay) keyDisplay.value = currentKey || "";
-  if (statusEl) statusEl.textContent = currentKey ? "Key configured" : "No key";
+  
+  // Check system key status
+  let systemKeyStatus = "";
+  let hasSystemKey = false;
+  try {
+    const res = await api("/api/system/key-status");
+    const data = await res.json();
+    if (data.hasSystemKey) {
+      hasSystemKey = true;
+      systemKeyStatus = ` | System fallback: ${data.systemKeyMasked || "configured"}`;
+    }
+  } catch {}
+  
+  if (statusEl) {
+    if (currentKey) {
+      statusEl.textContent = "Personal key configured" + systemKeyStatus;
+    } else if (hasSystemKey) {
+      statusEl.textContent = "Using system fallback key" + systemKeyStatus;
+    } else {
+      statusEl.textContent = "No key configured";
+    }
+  }
 
   const saveBtn = document.querySelector("#cjKeySave");
   const removeBtn = document.querySelector("#cjKeyRemove");
@@ -1424,8 +2387,289 @@ async function getCurrentCjKey() {
 function showBestSellersInterface() {
   if (!countryFilterBar) return;
   countryFilterBar.hidden = false;
-  if (queryInput) queryInput.value = "";
-  runSearch({ bestSelling: true });
+  // Don't clear the query — user may have typed something
+  runSupplierBestSellers();
+}
+
+// ── Saved keywords (chrome.storage.local) ──────────────────
+const KW_STORAGE_KEY = "cj_saved_keywords_v1";
+let savedKeywords = [];
+
+async function loadSavedKeywords() {
+  try {
+    const data = await chrome.storage.local.get([KW_STORAGE_KEY]);
+    savedKeywords = data[KW_STORAGE_KEY] || [];
+    renderSavedKeywords();
+  } catch {
+    savedKeywords = [];
+  }
+}
+
+function renderSavedKeywords() {
+  const container = document.querySelector("#savedKeywords");
+  if (!container) return;
+  if (!savedKeywords.length) {
+    container.innerHTML = "";
+    return;
+  }
+  container.innerHTML = savedKeywords.map((k) => `
+    <button type="button" class="kw-chip" data-keyword="${escapeHtml(k)}">
+      ${escapeHtml(k)}
+      <span class="kw-del" title="Remove">✕</span>
+    </button>
+  `).join("");
+  container.querySelectorAll(".kw-chip").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      if (e.target.classList.contains("kw-del")) {
+        e.stopPropagation();
+        deleteKeyword(btn.dataset.keyword);
+      } else {
+        if (queryInput) queryInput.value = btn.dataset.keyword;
+        runSearch();
+      }
+    });
+  });
+}
+
+async function saveCurrentKeyword() {
+  const kw = queryInput ? queryInput.value.trim() : "";
+  if (!kw) { setMessage("Type a keyword first to save.", true); return; }
+  if (savedKeywords.includes(kw)) {
+    setMessage(`Keyword "${kw}" already saved.`, false);
+    return;
+  }
+  savedKeywords.push(kw);
+  savedKeywords = savedKeywords.slice(-20); // keep last 20
+  try {
+    await chrome.storage.local.set({ [KW_STORAGE_KEY]: savedKeywords });
+    renderSavedKeywords();
+    setMessage(`Keyword "${kw}" saved.`, false);
+  } catch {
+    setMessage("Could not save keyword.", true);
+  }
+}
+
+async function deleteKeyword(keyword) {
+  savedKeywords = savedKeywords.filter((k) => k !== keyword);
+  try {
+    await chrome.storage.local.set({ [KW_STORAGE_KEY]: savedKeywords });
+    renderSavedKeywords();
+  } catch {
+    setMessage("Could not delete keyword.", true);
+  }
+}
+
+async function runSupplierBestSellers() {
+  const gen = ++searchGen;
+  const country = bestSellerCountrySelect ? bestSellerCountrySelect.value : "";
+  const sortBy = bestSellerSortSelect ? bestSellerSortSelect.value : "90d";
+  const query = queryInput ? queryInput.value.trim() : "";
+  if (!query) {
+    setMessage("Type a keyword first (e.g. 'desk lamp') to find supplier best-sellers.", true);
+    return;
+  }
+  setMessage("Loading supplier best-sellers from CJ…", false);
+  resultsEl.innerHTML = "";
+  try {
+    const params = new URLSearchParams({ pageSize: "15", sortBy });
+    params.set("q", query);
+    if (country) params.set("country", country);
+    const res = await api(`/api/suppliers/best-sellers?${params}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error([data.error, data.detail].filter(Boolean).join(" "));
+    renderSupplierBestSellers(data, gen);
+  } catch (err) {
+    setMessage(err.message || "Failed to load supplier best-sellers.", true);
+  }
+}
+
+function renderSupplierBestSellers(data, gen) {
+  if (gen !== searchGen) return;
+  const suppliers = data.suppliers || [];
+  if (!suppliers.length) {
+    const hint = data.searchError || data.filterNote || "No suppliers found. Try a broader keyword.";
+    setMessage(hint, false);
+    resultsEl.innerHTML = "";
+    return;
+  }
+  resultsEl.innerHTML = "";
+
+  // ── Header ──
+  const sortLabel = data.sortBy === "7d" ? "7-day sales"
+    : data.sortBy === "30d" ? "30-day sales"
+    : "90-day sales";
+  const sortLabelText = sortLabel === "7-day sales" ? "7d"
+    : sortLabel === "30-day sales" ? "30d"
+    : "90d";
+  const header = `<div class="sbs-header">
+    <div class="sbs-title">
+      <h3>🏆 Best-Selling Suppliers</h3>
+      <p class="sbs-sub">Sorted by ${sortLabelText} sales · Query: "${escapeHtml(data.searchQuery || "")}" · ${suppliers.length} supplier(s)</p>
+    </div>
+    <div class="sbs-legend">
+      <span class="leg leg-7d">7d sales</span>
+      <span class="leg leg-30d">30d sales</span>
+      <span class="leg leg-90d">90d sales</span>
+      <span class="leg leg-total">Total orders</span>
+      <span class="leg leg-warehouse">📦 Warehouses</span>
+    </div>
+  </div>`;
+  const filterNote = data.filterNote ? `<p class="note">${escapeHtml(data.filterNote)}</p>` : "";
+  const partialNote = data.timedOut
+    ? `<p class="note" style="color:var(--accent)">⚠️ Partial results — CJ timed out after analyzing ${data.enrichedCount || "?"}/${data.analyzedCount || "?"} products. Try a narrower keyword.</p>`
+    : "";
+
+  let html = header + filterNote + partialNote;
+
+  suppliers.forEach((s, idx) => {
+    const topProducts = (s.topProducts || []).slice(0, 10); // Show up to 10 products per supplier
+    const rank = idx + 1;
+    const supName = s.supplierName || "Unknown Supplier";
+    const isProductName = /^Product \d+$/.test(supName);
+    // Use the actual total products count from the supplier aggregation, not just displayed topProducts
+    const totalListed = Number(s.products?.length || s.totalProducts || s.listedNum || topProducts.length || 0);
+
+    // Count winning products — products with totalSales > 0 or listedNum > 50 (a popularity signal)
+    const winningCount = topProducts.filter((p) => Number(p.totalSales || 0) > 0 || Number(p.listedNum || 0) > 50).length;
+
+    // Warehouse badges with counts
+    const whBadges = (s.warehouseCountries || []).map((w) => {
+      const qty = Number(w.qty || 0);
+      return `<span class="wh-badge" title="Inventory in ${escapeHtml(w.code)}">${escapeHtml(w.code)}${qty > 0 ? ` (${qty.toLocaleString()})` : ""}</span>`;
+    }).join("");
+
+    // Sales badges
+    const s7d = Number(s.sold7d || 0);
+    const s30d = Number(s.sold30d || 0);
+    const s90d = Number(s.sold90d || 0);
+    const sTotal = Number(s.totalSales || 0);
+
+    const salesBadges = `<span class="sb sb-7d">${s7d.toLocaleString()}</span>
+      <span class="sb sb-30d">${s30d.toLocaleString()}</span>
+      <span class="sb sb-90d">${s90d.toLocaleString()}</span>
+      <span class="sb sb-total">${sTotal.toLocaleString()}</span>`;
+
+    // Top winning product — the one with highest sales
+    const winner = topProducts.length ? topProducts[0] : null;
+    const winnerUrl = winner ? buildCjProductUrl(winner.name, winner.id) : null;
+    const winnerHtml = winner && winnerUrl ? `
+      <div class="sbs-winner">
+        <span class="sbs-winner-label">🏆 Winning product</span>
+        <a class="sbs-winner-link" href="${winnerUrl}" target="_blank" rel="noopener">
+          <img src="${escapeHtml(winner.image || "")}" alt="" onerror="this.style.display='none'" style="width:48px;height:48px;border-radius:6px;object-fit:cover">
+          <span class="sbs-winner-name">${escapeHtml(winner.name || "Product").slice(0, 70)}</span>
+          <span class="sbs-winner-stats">${Number(winner.totalSales || 0).toLocaleString()} sold · USD ${(Number(winner.cjCost) || 0).toFixed(2)}</span>
+        </a>
+      </div>` : "";
+
+    // Top products (expanded details)
+    const topHtml = topProducts.length ? `
+      <div class="sbs-details">
+        <div class="sbs-details-head">🔥 Top ${topProducts.length} selling product(s)</div>
+        ${topProducts.map((tp) => {
+          const tp7d = Number(tp.sold7d || 0);
+          const tp30d = Number(tp.sold30d || 0);
+          const tp90d = Number(tp.sold90d || 0);
+          const tpTotal = Number(tp.totalSales || 0);
+          const tpListed = Number(tp.listedNum || 0);
+          const tpCost = Number(tp.cjCost || 0);
+          const img = tp.image || "";
+          const tpUrl = buildCjProductUrl(tp.name, tp.id);
+          const nameHtml = tpUrl
+            ? `<a href="${tpUrl}" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">${escapeHtml(tp.name || "Product").slice(0, 80)}</a>`
+            : escapeHtml(tp.name || "Product").slice(0, 80);
+          return `<div class="sbs-product">
+            <img src="${escapeHtml(img)}" alt="" onerror="this.style.display='none'">
+            <div class="sbs-product-info">
+              <strong>${nameHtml}</strong>
+              <span>CJ cost: USD ${tpCost.toFixed(2)} · Listed by ${tpListed.toLocaleString()} sellers</span>
+            </div>
+            <div class="sbs-product-sales">
+              <span class="sb sb-7d">${tp7d.toLocaleString()}</span>
+              <span class="sb sb-30d">${tp30d.toLocaleString()}</span>
+              <span class="sb sb-90d">${tp90d.toLocaleString()}</span>
+              <span class="sb sb-total">${tpTotal.toLocaleString()}</span>
+            </div>
+          </div>`;
+        }).join("")}
+      </div>` : "";
+
+    html += `
+      <article class="sbs-card" data-rank="${rank}">
+        <div class="sbs-card-head">
+          <span class="sbs-rank">#${rank}</span>
+          <div class="sbs-card-title">
+            <strong>${escapeHtml(supName)}</strong>
+            ${isProductName ? `<span class="sbs-note" title="CJ does not expose supplier names on listV2">⚠️ product-level only</span>` : ""}
+            ${s.supplierId && !isProductName ? `<span class="sbs-id">ID: ${escapeHtml(String(s.supplierId))}</span>` : ""}
+          </div>
+          <div class="sbs-card-actions">
+            <button class="sbs-toggle" data-idx="${idx}" type="button">${topProducts.length ? "▶ View details" : ""}</button>
+          </div>
+        </div>
+        <div class="sbs-card-meta">
+          <div class="sbs-sales">${salesBadges}</div>
+          <div class="sbs-meta-text">📋 ${totalListed} total product(s) · 🏆 ${winningCount} winning product(s)</div>
+          ${whBadges ? `<div class="sbs-warehouses">📦 Ships from: ${whBadges}</div>` : ""}
+        </div>
+        ${winnerHtml}
+        ${topHtml}
+      </article>`;
+  });
+
+  resultsEl.innerHTML = html;
+  // Show export button for supplier best-sellers too
+  if (exportCsvBtn) {
+    exportCsvBtn.hidden = false;
+    // Create flat product list for CSV export
+    const flat = [];
+    suppliers.forEach((s, idx) => {
+      const topProducts = (s.topProducts || []).slice(0, 10);
+      topProducts.forEach((tp) => {
+        flat.push({
+          id: tp.id,
+          name: tp.name,
+          cjCost: Number(tp.cjCost || 0),
+          totalSales: Number(tp.totalSales || 0),
+          sold7d: Number(tp.sold7d || 0),
+          sold30d: Number(tp.sold30d || 0),
+          sold90d: Number(tp.sold90d || 0),
+          listedNum: Number(tp.listedNum || 0),
+          supplierName: s.supplierName || "",
+          supplierId: s.supplierId || "",
+          rank: idx + 1,
+          isFreeShipping: false,
+          quickDelivery: false,
+          hasVideo: false,
+          deliveryDays: 0,
+          category: "",
+          score: 0,
+          scoreLabel: "",
+          promoPrice: 0,
+          suggestSellPrice: 0,
+          stock: 0
+        });
+      });
+    });
+    // Update shownProducts so the global export handler works
+    shownProducts = flat;
+    // Ensure the global export listener is set up (it's added once in init)
+    showExportButton();
+  }
+  setMessage(`${suppliers.length} supplier(s) found.`, false);
+
+  // Attach toggle listeners
+  resultsEl.querySelectorAll(".sbs-toggle").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = Number(btn.dataset.idx);
+      const card = btn.closest(".sbs-card");
+      const details = card?.querySelector(".sbs-details");
+      if (!details) return;
+      const hidden = details.style.display === "none" || details.style.display === "";
+      details.style.display = hidden ? "block" : "none";
+      btn.textContent = hidden ? "◀ Hide details" : "▶ View details";
+    });
+  });
 }
 
 // Initialize everything when DOM is ready

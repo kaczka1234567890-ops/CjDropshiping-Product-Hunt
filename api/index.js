@@ -22,6 +22,7 @@ import {
   primeTokenCache,
   runWithApiKey
 } from "./cjClient.js";
+import { readSettings } from "./settings.js";
 
 // ── In-memory product detail cache (TTL: 5 min) ──
 // Key: `${userId}:${pid}` — scoped per user since CJ keys differ
@@ -138,6 +139,13 @@ function fingerprint(key) {
   return crypto.createHash("sha256").update(key).digest("hex").slice(0, 12);
 }
 
+function maskApiKey(key) {
+  const value = String(key || "");
+  if (!value) return "";
+  if (value.length <= 10) return "••••••";
+  return `${value.slice(0, 4)}…${value.slice(-4)}`;
+}
+
 // ── Auth middleware ──────────────────────────────────────
 // IMPORTANT: must use the *data* client (which has the service-role key) for
 // token verification. The auth-only client does NOT have the service-role key,
@@ -240,10 +248,10 @@ async function recordHeartbeat(userId) {
   }
 }
 
-// Clear is_online for users who haven't been seen in 5 minutes
+// Clear is_online for users who haven't been seen in 90 seconds (3x heartbeat interval)
 async function gcOnlineUsers() {
   try {
-    const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const cutoff = new Date(Date.now() - 90 * 1000).toISOString();
     await supabase.from("profiles").update({ is_online: false }).lt("last_seen", cutoff);
   } catch (err) {
     console.warn("gc online failed:", err?.message || err);
@@ -504,16 +512,29 @@ app.post("/api/auth/signup", async (req, res) => {
     return res.status(429).json({ error: "Too many signup attempts. Try again in a few minutes." });
   }
   try {
-    const { email, password, fullName } = req.body || {};
+    const { email, password, fullName, username, phone } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: "Email and password are required." });
     if (String(password).length < 8) return res.status(400).json({ error: "Password must be at least 8 characters." });
-    const { data, error } = await authSupabase.auth.signUp({ email, password });
+
+    // Pass fullName, username, phone in user_metadata so trigger can use them
+    const { data, error } = await authSupabase.auth.signUp({
+      email,
+      password,
+      data: { full_name: fullName || null, username: username || null, phone: phone || null }
+    });
     if (error) return res.status(400).json({ error: error.message });
     const userId = data.user?.id;
-    if (userId) {
-      await supabase.from("profiles").upsert({ id: userId, email, full_name: fullName || null });
-      await supabase.from("admin_policies").upsert({ user_id: userId });
+
+    // Trigger auto-creates profile + admin_policies, but update extra fields if provided
+    if (userId && (fullName || username || phone)) {
+      await supabase.from("profiles").update({
+        full_name: fullName || null,
+        username: username || null,
+        phone: phone || null,
+        updated_at: new Date().toISOString()
+      }).eq("id", userId);
     }
+
     res.json({
       ok: true,
       userId: userId || null,
@@ -555,6 +576,16 @@ app.post("/api/heartbeat", requireAuth, async (req, res) => {
   }
 });
 
+// System API key status (public — no auth required)
+app.get("/api/system/key-status", (req, res) => {
+  const sysKey = getSystemApiKey();
+  res.json({
+    hasSystemKey: Boolean(sysKey),
+    systemKeyMasked: sysKey ? maskApiKey(sysKey) : null,
+    systemKeyCount: sysKey ? (sysKey.length > 4 ? `${sysKey.slice(0, 4)}…${sysKey.slice(-4)}` : "••••••") : null
+  });
+});
+
 app.get("/api/auth/me", requireAuth, async (req, res) => {
   const [{ data: profile }, { data: policy }, { data: keyRow }, isAdmin] = await Promise.all([
     supabase.from("profiles").select("*").eq("id", req.user.id).maybeSingle(),
@@ -562,10 +593,13 @@ app.get("/api/auth/me", requireAuth, async (req, res) => {
     supabase.from("user_api_keys").select("id").eq("user_id", req.user.id).maybeSingle(),
     isAdminUser(req.user.id)
   ]);
+  const sysKey = getSystemApiKey();
   res.json({
     id: req.user.id,
     email: req.user.email,
     fullName: profile?.full_name || null,
+    username: profile?.username || null,
+    phone: profile?.phone || null,
     isAdmin,
     isBlocked: policy?.is_blocked || false,
     dailyLimit: policy?.daily_api_limit ?? null,
@@ -574,9 +608,55 @@ app.get("/api/auth/me", requireAuth, async (req, res) => {
     monthlyUsed: policy?.monthly_api_count ?? 0,
     features: policy?.features || { search: true, listing: true, enrich: true },
     hasCjKey: Boolean(keyRow),
+    hasSystemKey: Boolean(sysKey),
     isOnline: profile?.is_online || false,
     lastSeen: profile?.last_seen || null
   });
+});
+
+// ── Profile update (username, phone, full_name, password) ────
+app.put("/api/profile", requireAuth, async (req, res) => {
+  try {
+    const { fullName, username, phone, currentPassword, newPassword } = req.body || {};
+    const updates = {};
+    if (fullName !== undefined) updates.full_name = String(fullName).trim() || null;
+    if (username !== undefined) {
+      const u = String(username).trim();
+      if (u && !/^[a-zA-Z0-9_\-\.]{3,30}$/.test(u)) {
+        return res.status(400).json({ error: "Username must be 3-30 chars: letters, numbers, _ - ." });
+      }
+      // Check uniqueness
+      const { data: existing } = await supabase.from("profiles").select("id").eq("username", u).neq("id", req.user.id).maybeSingle();
+      if (existing) return res.status(409).json({ error: "Username already taken." });
+      updates.username = u || null;
+    }
+    if (phone !== undefined) updates.phone = String(phone).trim() || null;
+
+    if (Object.keys(updates).length) {
+      updates.updated_at = new Date().toISOString();
+      const { error } = await supabase.from("profiles").update(updates).eq("id", req.user.id);
+      if (error) throw error;
+    }
+
+    // Password change — requires currentPassword verification
+    if (newPassword) {
+      if (!currentPassword) return res.status(400).json({ error: "Current password required to change password." });
+      if (String(newPassword).length < 8) return res.status(400).json({ error: "New password must be at least 8 characters." });
+      // Verify current password
+      const { data: loginData, error: loginErr } = await authSupabase.auth.signInWithPassword({
+        email: req.user.email, password: currentPassword
+      });
+      if (loginErr) return res.status(401).json({ error: "Current password is incorrect." });
+      const { error: pwErr } = await authSupabase.auth.admin.updateUserById(req.user.id, { password: newPassword });
+      if (pwErr) return res.status(400).json({ error: pwErr.message });
+    }
+
+    // Return updated profile
+    const { data: profile } = await supabase.from("profiles").select("*").eq("id", req.user.id).maybeSingle();
+    res.json({ ok: true, profile: { fullName: profile?.full_name, username: profile?.username, phone: profile?.phone } });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ── CJ API Key management ───────────────────────────────
@@ -637,18 +717,32 @@ async function getUserApiKey(userId) {
   return decrypt(data.key_encrypted, data.key_iv, data.key_auth_tag, ENCRYPTION_KEY);
 }
 
+// System-level fallback key from environment / settings
+export function getSystemApiKey() {
+  // Priority: env var > settings.json cjApiKey > nothing
+  const envKey = String(process.env.CJ_SYSTEM_API_KEY || "").trim();
+  if (envKey) return envKey;
+  try {
+    const stored = String(readSettings().cjApiKey || "").trim();
+    if (stored) return stored;
+  } catch {}
+  return null;
+}
+
 // ── CJ API proxy ────────────────────────────────────────
 // Runs the handler with the *calling user's* decrypted CJ key bound to the
 // async context, so concurrent requests can never use another user's key.
-async function withCjKey(userId, res, handler) {
+async function withCjKey(userId, res, handler, timeoutMs = 58000) {
   const key = await getUserApiKey(userId);
-  if (!key) {
+  // Fall back to system-level key when user hasn't set their own
+  const effectiveKey = key || getSystemApiKey();
+  if (!effectiveKey) {
     throw Object.assign(new Error("CJ API key not configured."), {
       status: 503,
       publicMessage: "Open ⚙ Settings in the extension and paste your CJdropshipping API Key."
     });
   }
-  // Hard timeout guard: CJ is slow. Race the handler against a 50s timer;
+  // Hard timeout guard: CJ is slow. Race the handler against a timer;
   // if it fires, throw a 504 (caught by the route's outer catch, which
   // preserves error.status). This prevents Vercel's 60s kill from returning
   // an unhelpful FUNCTION_INVOCATION_TIMEOUT with no JSON body.
@@ -658,10 +752,10 @@ async function withCjKey(userId, res, handler) {
       err.status = 504;
       err.publicMessage = err.message;
       reject(err);
-    }, 50000)
+    }, timeoutMs)
   );
   return Promise.race([
-    runWithApiKey(key, handler),
+    runWithApiKey(effectiveKey, handler),
     timeoutPromise
   ]);
 }
@@ -684,16 +778,19 @@ app.get("/api/products", requireAuth, async (req, res) => {
   const countryCode = String(req.query.country || "").trim() || undefined;
   const effectiveCountry = countryCode || (quick ? (deliverTo || "US") : undefined);
 
+  const page = Math.max(1, Number.parseInt(String(req.query.page || "1"), 10) || 1);
+  const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(req.query.pageSize || req.query.limit || "20"), 10) || 20));
+
   try {
     const result = await withCjKey(req.user.id, res, async (key) => {
       const query = String(req.query.q || req.query.query || "").trim();
-      const page = Math.max(1, Number.parseInt(String(req.query.page || "1"), 10) || 1);
-      const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(req.query.pageSize || req.query.limit || "20"), 10) || 20));
       const freeShipping = String(req.query.freeShipping || "") === "1";
       const minStock = req.query.minStock !== undefined ? Number(req.query.minStock) : undefined;
       const maxStock = req.query.maxStock !== undefined ? Number(req.query.maxStock) : undefined;
       const minListed = req.query.minListed !== undefined ? Number(req.query.minListed) : undefined;
       const maxListed = req.query.maxListed !== undefined ? Number(req.query.maxListed) : undefined;
+      const minOrders = req.query.minOrders !== undefined ? Number(req.query.minOrders) : undefined;
+      const maxOrders = req.query.maxOrders !== undefined ? Number(req.query.maxOrders) : undefined;
       const minPrice = req.query.minPrice !== undefined ? Number(req.query.minPrice) : undefined;
       const maxPrice = req.query.maxPrice !== undefined ? Number(req.query.maxPrice) : undefined;
       const quickMark = Boolean(quick && effectiveCountry && String(effectiveCountry).toUpperCase() !== "CN");
@@ -702,7 +799,7 @@ app.get("/api/products", requireAuth, async (req, res) => {
         query, page, pageSize, trending, freeShipping, minStock, minPrice, maxPrice,
         countryCode: effectiveCountry, orderBy: sort === "listed_desc" ? 1 : undefined, sort: "desc"
       });
-      let products = sortProducts(result.products.map(analyzeProduct), sort);
+      let products = sortProducts(result.products.map((p) => analyzeProduct(p)), sort);
       // Filter by min/max listings (number of sellers who listed this product)
       // CJ doesn't support this server-side, so we filter client-side
       if (minListed !== undefined && minListed !== null && Number.isFinite(minListed) && minListed > 0) {
@@ -713,6 +810,14 @@ app.get("/api/products", requireAuth, async (req, res) => {
       }
       if (maxStock !== undefined && maxStock !== null && Number.isFinite(maxStock) && maxStock > 0) {
         products = products.filter((p) => (Number(p.stock) || 0) <= maxStock);
+      }
+      // MOQ filter — min/max orders (totalSales from CJ orderCount). Products without
+      // sales data are treated as having 0 orders, so they only pass when minOrders is 0.
+      if (minOrders !== undefined && minOrders !== null && Number.isFinite(minOrders) && minOrders > 0) {
+        products = products.filter((p) => (Number(p.totalSales) || 0) >= minOrders);
+      }
+      if (maxOrders !== undefined && maxOrders !== null && Number.isFinite(maxOrders) && maxOrders > 0) {
+        products = products.filter((p) => (Number(p.totalSales) || 0) <= maxOrders);
       }
       if (quickMark) {
         products.forEach((p) => {
@@ -747,6 +852,91 @@ app.get("/api/products", requireAuth, async (req, res) => {
 });
 
 // ── Supplier best-sellers aggregation ─────────────────
+// ── Category-based winning product search ────────────────
+// Search products by CJ category without a keyword — useful for browsing
+// "winning products" in a specific category.
+const CJ_CATEGORIES = [
+  { id: "1", name: "Women's Clothing", nameCn: "女装" },
+  { id: "2", name: "Pet Supplies", nameCn: "宠物用品" },
+  { id: "3", name: "Home, Garden & Furniture", nameCn: "家居园艺家具" },
+  { id: "4", name: "Health, Beauty & Hair", nameCn: "健康美容美发" },
+  { id: "5", name: "Jewelry & Watches", nameCn: "珠宝手表" },
+  { id: "6", name: "Men's Clothing", nameCn: "男装" },
+  { id: "7", name: "Bags & Shoes", nameCn: "包包鞋子" },
+  { id: "8", name: "Toys, Kids & Babies", nameCn: "玩具儿童婴儿" },
+  { id: "9", name: "Sports & Outdoors", nameCn: "运动户外" },
+  { id: "10", name: "Consumer Electronics", nameCn: "消费电子" },
+  { id: "11", name: "Home Improvement", nameCn: "家居改良" },
+  { id: "12", name: "Automobiles & Motorcycles", nameCn: "汽车摩托车" },
+  { id: "13", name: "Phones & Accessories", nameCn: "手机配件" },
+  { id: "14", name: "Computer & Office", nameCn: "电脑办公" }
+];
+
+app.get("/api/categories", requireAuth, async (req, res) => {
+  res.json({ categories: CJ_CATEGORIES });
+});
+
+app.get("/api/products/category/:categoryId", requireAuth, async (req, res) => {
+  const deviceId = getDeviceId(req);
+  const access = await checkAccess(req.user.id, deviceId);
+  if (!access.allowed) return res.status(403).json({ error: access.reason });
+  await registerDevice(req.user.id, deviceId, req.headers["user-agent"], req.ip);
+
+  const categoryId = String(req.params.categoryId || "").trim();
+  const cat = CJ_CATEGORIES.find((c) => c.id === categoryId);
+  if (!cat) return res.status(400).json({ error: "Invalid category ID." });
+
+  const page = Math.max(1, Number.parseInt(String(req.query.page || "1"), 10) || 1);
+  const pageSize = Math.min(100, Math.max(1, Number.parseInt(String(req.query.pageSize || "20"), 10) || 20));
+
+  try {
+    const result = await withCjKey(req.user.id, res, async (key) => {
+      // CJ listV2's oneCategoryId param does NOT work reliably — it returns
+      // the same products regardless of which category ID we send.
+      // Instead, we use the category NAME as the keyword. CJ's keyword search
+      // matches product names/descriptions, which is good enough for browsing
+      // category products. We also try the Chinese name as a fallback.
+      const searchResult = await searchProducts({
+        query: cat.name,
+        page, pageSize,
+        trending: false,
+        countryCode: undefined,
+        sort: "desc",
+        categoryId: undefined
+      });
+      console.log("[Category API] CJ searchResult count:", searchResult.products?.length, "pagination:", searchResult.pagination, "keyword:", cat.name);
+
+      const rawProducts = searchResult.products || [];
+      console.log("[Category API] Got", rawProducts.length, "products for category", categoryId, cat.name);
+
+      const products = sortProducts(rawProducts.map((p) => analyzeProduct(p)), "winning");
+      return {
+        products,
+        pagination: searchResult.pagination,
+        note: `Searched by category name "${cat.name}" (CJ oneCategoryId param is unreliable)`,
+        category: cat
+      };
+    });
+
+    recordUsage(req.user.id, "/api/products/category/:id", req.ip, deviceId, 200);
+    res.json({
+      products: result.products,
+      category: result.category,
+      page: result.pagination?.pageNum ?? page,
+      pageSize: result.pagination?.pageSize ?? pageSize,
+      total: result.pagination?.total ?? null,
+      totalPages: result.pagination?.totalPages ?? null,
+      source: "CJdropshipping API 2.0"
+    });
+  } catch (error) {
+    recordUsage(req.user.id, "/api/products/category/:id", req.ip, deviceId, error.status || 502);
+    res.status(error.status || 502).json({
+      error: "Could not retrieve products by category.",
+      detail: error.publicMessage || error.message
+    });
+  }
+});
+
 app.get("/api/suppliers/best-sellers", requireAuth, async (req, res) => {
   const deviceId = getDeviceId(req);
   const access = await checkAccess(req.user.id, deviceId);
@@ -755,16 +945,26 @@ app.get("/api/suppliers/best-sellers", requireAuth, async (req, res) => {
 
   const query = String(req.query.q || "").trim();
   const sortBy = String(req.query.sortBy || "90d"); // 7d | 30d | 90d
-  // Best-sellers needs per-product sales calls (CJ is slow) — cap low
-      // to stay under Vercel's 60s budget. 15 products × ~5s / 3 concurrent ≈ 25s.
-      const pageSize = Math.min(30, Math.max(1, Number(req.query.pageSize || 15) || 15));
+  // Best-sellers needs per-product sales calls (CJ is slow).
+  // Increase pageSize to fetch more products, process more with higher concurrency.
+  // Max ~30 products × ~5s / 5 concurrent ≈ 30s, leaving buffer before 40s deadline.
+  const pageSize = Math.min(30, Math.max(1, Number(req.query.pageSize || 30) || 30));
   const filterCountry = String(req.query.country || "").trim().toUpperCase(); // e.g. "US", "GB"
+
+  // Require a keyword — searching ALL products without a query returns
+  // thousands of items and CJ times out before returning anything.
+  if (!query) {
+    return res.status(400).json({
+      error: "Keyword required for Best Sellers.",
+      detail: "Type a product keyword (e.g. 'desk lamp') and try again. Searching all products without a keyword times out."
+    });
+  }
 
   try {
     const result = await withCjKey(req.user.id, res, async () => {
-      // Hard deadline: CJ is slow. If we exceed 48s, return partial results
+      // Hard deadline: CJ is slow. If we exceed 50s, return partial results
       // rather than letting Vercel kill the function at 60s with nothing.
-      const deadline = Date.now() + 48000;
+      const deadline = Date.now() + 53000;
 
       // Search products
       let products = [];
@@ -783,7 +983,8 @@ app.get("/api/suppliers/best-sellers", requireAuth, async (req, res) => {
 
       // Fetch sales data per product in parallel batches (CJ is slow —
       // sequential 50×2 calls would blow the 60s Vercel budget).
-      const CONCURRENCY = 3;
+      // Higher concurrency = more products processed before deadline
+      const CONCURRENCY = 5;
       const analyzed = products.map((p) => analyzeProduct(p));
       const enriched = [];
       for (let i = 0; i < analyzed.length; i += CONCURRENCY) {
@@ -800,31 +1001,30 @@ app.get("/api/suppliers/best-sellers", requireAuth, async (req, res) => {
           if (r.status === "fulfilled") enriched.push(r.value);
         }
       }
+      console.log("[Best Sellers] Enriched", enriched.length, "of", analyzed.length, "products. With sales:", enriched.filter(e => e.sales).length);
 
       // Aggregate by supplier
       const supplierMap = new Map();
+      const timedOut = Date.now() > deadline && enriched.length < analyzed.length;
       for (const { product, sales, reviews } of enriched) {
-        // Determine supplier key — try multiple sources for better names
-        const rawName = product.supplierName || "";
-        const rawId = product.supplierId || "";
-        const salesShopName = sales?.shopName || "";
-        const salesSupplierEn = sales?.supplierNameEn || "";
+        // Determine supplier key — try multiple sources for better names.
+        // Priority: sales.shopName > sales.supplierNameEn > product.supplierName > supplierId > product name
+        const rawName = (product.supplierName && String(product.supplierName).trim()) || "";
+        const rawId = (product.supplierId && String(product.supplierId).trim()) || "";
+        const salesShopName = (sales?.shopName && String(sales.shopName).trim()) || "";
+        const salesSupplierEn = (sales?.supplierNameEn && String(sales.supplierNameEn).trim()) || "";
 
-        // Priority: CJ shop name from sales data > supplierName > supplierId > unknown
-        let displayName = rawName;
-        let displayId = rawId;
-        let key = rawName || rawId;
+        let displayName = salesShopName || salesSupplierEn || rawName || "";
+        let displayId = rawId || (sales?.supplierId && String(sales.supplierId).trim()) || "";
+        let key = displayName || displayId || "";
 
-        if (!displayName && salesShopName) {
-          displayName = salesShopName;
-          key = salesShopName;
-        } else if (!displayName && salesSupplierEn) {
-          displayName = salesSupplierEn;
-          key = salesSupplierEn;
-        } else if (!key) {
-          // No name/id found at all — use a placeholder based on product ID
-          displayName = product.id ? `Product ${product.id}` : "Unknown Supplier";
+        if (!key) {
+          // No name/id found at all — use product name as fallback, then product ID
+          displayName = product.name || (product.id ? `Product ${product.id}` : "Unknown Supplier");
           key = displayName;
+        }
+        if (!displayName && displayId) {
+          displayName = `Supplier ${displayId}`;
         }
 
         const entry = supplierMap.get(key);
@@ -845,7 +1045,35 @@ app.get("/api/suppliers/best-sellers", requireAuth, async (req, res) => {
         sup.products.push(productWithSales);
         // Use listedNum as fallback when sales data is unavailable
         sup.listedNum += Number(product.listedNum) || 0;
-        if (sales) {
+        // Always track products — show them even when sales data is unavailable
+        sup.topProducts.push({
+          id: product.id,
+          name: product.name,
+          image: product.image,
+          cjCost: product.cjCost,
+          currency: product.currency,
+          totalSales: Number(sales?.totalSales) || Number(product.listedNum) || 0,
+          sold7d: Number(sales?.sold7d) || Math.round((Number(sales?.totalSales) || Number(product.listedNum) || 0) * 0.18),
+          sold30d: Number(sales?.sold30d) || Math.round((Number(sales?.totalSales) || Number(product.listedNum) || 0) * 0.55),
+          sold90d: Number(sales?.sold90d) || Number(sales?.totalSales) || Number(product.listedNum) || 0,
+          listedNum: Number(product.listedNum) || 0,
+          createrTime: sales?.createrTime ?? null,
+          daysSinceListing: sales?.daysSinceListing ?? null,
+          supplierName: displayName,
+          supplierId: displayId || null
+        });
+        // Fallback: when CJ sales data is unavailable, use listedNum as a
+        // popularity proxy so suppliers still get meaningful sort values.
+        const fallbackSales = Number(sales?.totalSales) || Number(product.listedNum) || 0;
+        const fallback7d = Number(sales?.sold7d) || Math.round(fallbackSales * 0.18);
+        const fallback30d = Number(sales?.sold30d) || Math.round(fallbackSales * 0.55);
+        const fallback90d = Number(sales?.sold90d) || fallbackSales;
+        if (!sales) {
+          sup.sold7d += fallback7d;
+          sup.sold30d += fallback30d;
+          sup.sold90d += fallback90d;
+          sup.totalSales += fallbackSales;
+        } else {
           sup.sold7d += Number(sales.sold7d) || 0;
           sup.sold30d += Number(sales.sold30d) || 0;
           sup.sold90d += Number(sales.sold90d) || 0;
@@ -856,34 +1084,22 @@ app.get("/api/suppliers/best-sellers", requireAuth, async (req, res) => {
               sup.warehouseCountries[cc] = (sup.warehouseCountries[cc] || 0) + Number(qty);
             }
           }
-          // Track top-selling products for this supplier
-          sup.topProducts.push({
-            id: product.id,
-            name: product.name,
-            image: product.image,
-            cjCost: product.cjCost,
-            currency: product.currency,
-            totalSales: Number(sales.totalSales) || 0,
-            sold7d: Number(sales.sold7d) || 0,
-            sold30d: Number(sales.sold30d) || 0,
-            sold90d: Number(sales.sold90d) || 0,
-            listedNum: Number(product.listedNum) || 0,
-            createrTime: sales?.createrTime ?? null,
-            daysSinceListing: sales?.daysSinceListing ?? null,
-            supplierName: displayName,
-            supplierId: displayId || null
-          });
         }
       }
 
       // Sort top products within each supplier by totalSales
       for (const sup of supplierMap.values()) {
         sup.topProducts.sort((a, b) => b.totalSales - a.totalSales);
-        sup.topProducts = sup.topProducts.slice(0, 5); // keep top 5
+        sup.topProducts = sup.topProducts.slice(0, 10); // keep top 10
       }
 
-      // Sort suppliers — prioritize totalSales (CJ orderCount), then listedNum
+      // Sort suppliers — primary sort by the selected time window (7d/30d/90d),
+      // then totalSales as tiebreaker, then listedNum as final fallback.
+      const sortKey = sortBy === "7d" ? "sold7d" : sortBy === "30d" ? "sold30d" : "sold90d";
       const rawSuppliers = [...supplierMap.values()].sort((a, b) => {
+        const va = a[sortKey] || 0;
+        const vb = b[sortKey] || 0;
+        if (va || vb) return vb - va;
         const ta = a.totalSales || 0;
         const tb = b.totalSales || 0;
         if (ta || tb) return tb - ta;
@@ -893,6 +1109,7 @@ app.get("/api/suppliers/best-sellers", requireAuth, async (req, res) => {
       // Convert warehouseCountries object to sorted array for frontend
       const suppliers = rawSuppliers.map((s) => ({
         ...s,
+        totalProducts: s.products.length,
         warehouseCountries: Object.entries(s.warehouseCountries)
           .map(([code, qty]) => ({ code, qty }))
           .sort((a, b) => b.qty - a.qty)
@@ -919,7 +1136,7 @@ app.get("/api/suppliers/best-sellers", requireAuth, async (req, res) => {
         }
       }
 
-      return { suppliers: filteredSuppliers, sortBy, total: filteredSuppliers.length, searchQuery: query, filterCountry };
+      return { suppliers: filteredSuppliers, sortBy, total: filteredSuppliers.length, searchQuery: query, filterCountry, timedOut, analyzedCount: analyzed.length, enrichedCount: enriched.length };
     });
 
     recordUsage(req.user.id, "/api/suppliers/best-sellers", req.ip, deviceId, 200);
@@ -949,7 +1166,12 @@ app.post("/api/products/:pid/calculate", requireAuth, async (req, res) => {
   try {
     const result = await withCjKey(req.user.id, res, async () => {
       const { product, note, createrTime: detailCreaterTime, daysSinceListing: detailDaysSinceListing } = await getProductDetail(pid);
-      const analyzed = analyzeProduct(product);
+      const analyzed = analyzeProduct(product, pid);
+      // Use original numeric ID (from listV2) for product URL — CJ website expects this format
+      // The detail response's pid is a UUID; the numeric id field may be missing or different
+      if (pid) {
+        analyzed.productUrl = `https://cjdropshipping.com/product/-p-${encodeURIComponent(String(pid))}.html`;
+      }
       let sales = null;
       try { sales = await getProductSalesInfo(analyzed.id || pid); } catch (e) { console.warn("Sales unavailable:", e.message); }
 
@@ -1056,7 +1278,11 @@ app.get("/api/products/:pid", requireAuth, async (req, res) => {
       const detailResult = detail.status === "fulfilled" ? detail.value : null;
       const product = detailResult?.product;
       if (!product) throw new Error("CJ returned no product detail for this pid.");
-      const analyzed = analyzeProduct(product);
+      // Use original numeric ID (from listV2) for product URL — CJ website expects this format
+      const analyzed = analyzeProduct(product, pid);
+      if (pid) {
+        analyzed.productUrl = `https://cjdropshipping.com/product/-p-${encodeURIComponent(String(pid))}.html`;
+      }
       const salesData = sales.status === "fulfilled" ? sales.value : null;
       if (sales.status === "rejected") console.warn("Sales unavailable:", sales.reason?.message);
       const reviewsData = reviews.status === "fulfilled" ? reviews.value : null;
@@ -1066,7 +1292,18 @@ app.get("/api/products/:pid", requireAuth, async (req, res) => {
       const salesWithDetailTime = salesData || {};
       if (detailResult?.createrTime && !salesWithDetailTime.createrTime) salesWithDetailTime.createrTime = detailResult.createrTime;
       if (detailResult?.daysSinceListing !== null && salesWithDetailTime.daysSinceListing === null) salesWithDetailTime.daysSinceListing = detailResult.daysSinceListing;
-      return { product: analyzed, reviews: reviewsData, sales: salesWithDetailTime, metrics, note: detailResult?.note, supplier: salesData, adspy: buildAdSpy(analyzed), sellerList: buildSellerList(analyzed, salesData) };
+      return {
+        product: analyzed,
+        reviews: reviewsData,
+        sales: salesWithDetailTime,
+        metrics,
+        note: detailResult?.note,
+        supplier: salesData,
+        adspy: buildAdSpy(analyzed),
+        sellerList: buildSellerList(analyzed, salesData),
+        warehouseCountries: salesWithDetailTime.warehouseCountries || {},
+        productUrl: analyzed.productUrl || `https://www.cjdropshipping.com/product/-p-${encodeURIComponent(pid)}.html`
+      };
     });
 
     // Cache the result
@@ -1080,6 +1317,121 @@ app.get("/api/products/:pid", requireAuth, async (req, res) => {
   }
 });
 
+// ── Warehouse delivery check ──────────────────────────────────────
+// CJ does NOT expose a "delivery country list" per product. The closest
+// proxy is the warehouse inventory per country (from productDetail/query)
+// plus a live freight quote from each warehouse to each major destination.
+// This endpoint returns a delivery-availability matrix so users can see
+// exactly which countries a product can be shipped to before listing.
+app.get("/api/products/:pid/warehouses", requireAuth, async (req, res) => {
+  const deviceId = getDeviceId(req);
+  const access = await checkAccess(req.user.id, deviceId);
+  if (!access.allowed) return res.status(403).json({ error: access.reason });
+  await registerDevice(req.user.id, deviceId, req.headers["user-agent"], req.ip);
+
+  const pid = String(req.params.pid || "").trim();
+  if (!pid) return res.status(400).json({ error: "Product id required." });
+
+  // Major delivery destinations (CJ ships to these regularly)
+  const DESTINATIONS = ["US","GB","CA","AU","DE","FR","ES","IT","NL","BE","SE","NO","DK","FI","PL","AT","CH","IE","PT","CZ","GR","RO","HU","MX","BR","CL","JP","KR","SG","MY","TH","PH","ID","VN","NZ","AE","SA","IN","IL","TR","ZA"];
+
+  try {
+    const result = await withCjKey(req.user.id, res, async () => {
+      // 1. Get product detail + sales info to find warehouse countries
+      const [detail, sales] = await Promise.allSettled([
+        getProductDetail(pid),
+        getProductSalesInfo(pid)
+      ]);
+      const detailResult = detail.status === "fulfilled" ? detail.value : null;
+      const salesData = sales.status === "fulfilled" ? sales.value : null;
+
+      const warehouseCountries = salesData?.warehouseCountries || {};
+      const warehouseEntries = Object.entries(warehouseCountries)
+        .filter(([, qty]) => Number(qty) > 0)
+        .map(([code, qty]) => ({ code, qty: Number(qty) }))
+        .sort((a, b) => b.qty - a.qty);
+
+      // 2. For each warehouse country, quote freight to a sample of destinations
+      //    (limit to 8 destinations × up to 6 warehouses to stay within timeout)
+      const sampleDests = DESTINATIONS.slice(0, 8);
+      const sampleWarehouses = warehouseEntries.slice(0, 6);
+
+      const quotes = [];
+      if (sampleWarehouses.length && sampleDests.length) {
+        const variants = await getVariantList(pid);
+        const heaviest = variants.reduce((max, v) => (v.weight > (max?.weight || 0) ? v : max), variants[0]);
+        const vid = heaviest?.vid;
+        if (vid) {
+          const quoteTasks = [];
+          for (const w of sampleWarehouses) {
+            for (const d of sampleDests) {
+              if (w.code === d) continue; // same country = no freight needed
+              quoteTasks.push(
+                quoteFreight({ vid, pid, endCountryCode: d, startCountryCode: w.code })
+                  .then((methods) => ({ from: w.code, to: d, methods: methods || [], ok: true }))
+                  .catch(() => ({ from: w.code, to: d, methods: [], ok: false }))
+              );
+            }
+          }
+          const settled = await Promise.allSettled(quoteTasks);
+          for (const s of settled) {
+            if (s.status === "fulfilled") quotes.push(s.value);
+          }
+        }
+      }
+
+      // 3. Build delivery matrix: for each destination, which warehouses can ship there
+      const deliveryMap = {};
+      for (const d of DESTINATIONS) {
+        deliveryMap[d] = { canDeliver: false, warehouses: [], cheapest: null, methods: [] };
+      }
+      // Every warehouse country can at least "ship" to itself
+      for (const w of warehouseEntries) {
+        if (deliveryMap[w.code]) {
+          deliveryMap[w.code].canDeliver = true;
+          deliveryMap[w.code].warehouses.push({ code: w.code, qty: w.qty, self: true });
+        }
+      }
+      for (const q of quotes) {
+        if (!deliveryMap[q.to]) continue;
+        const cheapest = (q.methods || []).sort((a, b) => (Number(a.price) || 9e9) - (Number(b.price) || 9e9))[0];
+        deliveryMap[q.to].canDeliver = true;
+        deliveryMap[q.to].warehouses.push({ code: q.from, qty: 0, self: false, price: cheapest?.price ?? null, name: cheapest?.name ?? null, aging: cheapest?.aging ?? null });
+        if (cheapest && (!deliveryMap[q.to].cheapest || cheapest.price < deliveryMap[q.to].cheapest)) {
+          deliveryMap[q.to].cheapest = cheapest.price;
+          deliveryMap[q.to].methods = q.methods;
+        }
+      }
+
+      const deliveryCountries = Object.entries(deliveryMap)
+        .filter(([, v]) => v.canDeliver)
+        .map(([code, v]) => ({
+          code,
+          warehouses: v.warehouses,
+          cheapestPrice: v.cheapest,
+          methods: v.methods
+        }))
+        .sort((a, b) => a.code.localeCompare(b.code));
+
+      return {
+        pid,
+        warehouseCountries: warehouseEntries,
+        deliveryCountries,
+        quoted: quotes.length > 0,
+        note: quotes.length
+          ? `Live freight quotes from ${sampleWarehouses.length} warehouse(s) to ${sampleDests.length} destination(s).`
+          : "No freight quotes available — warehouse inventory shown only."
+      };
+    });
+
+    recordUsage(req.user.id, "/api/products/:pid/warehouses", req.ip, deviceId, 200);
+    res.json(result);
+  } catch (error) {
+    recordUsage(req.user.id, "/api/products/:pid/warehouses", req.ip, deviceId, error.status || 502);
+    res.status(error.status || 502).json({ error: "Could not fetch warehouse delivery data.", detail: error.publicMessage });
+  }
+});
+
 app.get("/api/enrich", requireAuth, async (req, res) => {
   const deviceId = getDeviceId(req);
   const access = await checkAccess(req.user.id, deviceId);
@@ -1089,13 +1441,14 @@ app.get("/api/enrich", requireAuth, async (req, res) => {
   const ids = String(req.query.ids || "").split(",").map(s => s.trim()).filter(Boolean);
   const unique = [...new Set(ids)].slice(0, 10);
   if (!unique.length) return res.status(400).json({ error: "Provide ids (comma-separated, max 10)." });
+  const deliverTo = String(req.query.deliverTo || "").trim().toUpperCase().slice(0, 2) || null;
 
   try {
     const result = await withCjKey(req.user.id, res, async () => {
       // Fetch sales + reviews + product detail in parallel batches
       const items = {};
       const CONCURRENCY = 3;
-      const deadline = Date.now() + 48000;
+      const deadline = Date.now() + 55000;
       for (let i = 0; i < unique.length; i += CONCURRENCY) {
         if (Date.now() > deadline) break;
         const batch = unique.slice(i, i + CONCURRENCY);
@@ -1122,6 +1475,23 @@ app.get("/api/enrich", requireAuth, async (req, res) => {
             // Merge createrTime/daysSinceListing from product detail as fallback
             const detailCreaterTime = detail?.createrTime ?? null;
             const detailDaysSinceListing = detail?.daysSinceListing ?? null;
+
+            // Shipping cost estimate when deliverTo is set
+            let shippingCost = null;
+            let shippingFrom = null;
+            if (deliverTo && sales?.warehouseCountries) {
+              const whEntries = Object.entries(sales.warehouseCountries)
+                .filter(([, qty]) => Number(qty) > 0);
+              if (whEntries.length) {
+                const inDeliver = whEntries.find(([cc]) => cc === deliverTo);
+                const chosen = inDeliver ? inDeliver[0] : whEntries[0][0];
+                shippingFrom = chosen;
+                const sameCountry = chosen === deliverTo;
+                const regional = ["US", "CA", "MX", "UK", "GB", "FR", "DE", "IT", "ES", "NL", "PL", "AU", "NZ", "JP", "KR"].includes(chosen) && ["US", "CA", "MX", "UK", "GB", "FR", "DE", "IT", "ES", "NL", "PL", "AU", "NZ", "JP", "KR"].includes(deliverTo);
+                shippingCost = sameCountry ? 0 : regional ? 3.5 : 6.5;
+              }
+            }
+
             return {
               id,
               cjCost: detail?.product?.cjCost ?? null,
@@ -1140,7 +1510,9 @@ app.get("/api/enrich", requireAuth, async (req, res) => {
               isNewListing: sales?.isNewListing ?? null,
               isNewProduct: sales?.isNewProduct ?? null,
               isRelisting: sales?.isRelisting ?? null,
-              warehouseCountries: sales?.warehouseCountries ?? {}
+              warehouseCountries: sales?.warehouseCountries ?? {},
+              shippingCost,
+              shippingFrom
             };
           })
         );
@@ -1191,7 +1563,7 @@ app.get("/api/listing/preview", requireAuth, async (req, res) => {
       const heaviest = variants.reduce((max, v) => (v.weight > (max?.weight || 0) ? v : max), variants[0]);
       let shipping = { price: null, methods: [], note: null, from, to: country, quoted: false };
       try {
-        const methods = await quoteFreight({ vid: heaviest.vid, endCountryCode: country, startCountryCode: from });
+        const methods = await quoteFreight({ vid: heaviest.vid, pid, endCountryCode: country, startCountryCode: from });
         const cheapest = methods[0] || null;
         shipping = { price: cheapest?.price ?? null, name: cheapest?.name ?? null, aging: cheapest?.aging ?? null, from, to: country, quoted: Boolean(cheapest?.price), methods, note: methods.length ? `Shipping quoted ${from} → ${country}` : `No route ${from} → ${country}` };
       } catch (e) { console.warn("Freight failed:", e.message); }
@@ -1287,7 +1659,7 @@ app.post("/api/listing/publish", requireAuth, async (req, res) => {
       let logistics = String(body.logistics || "").trim();
       if (!logistics) {
         try {
-          const methods = await quoteFreight({ vid: rows[0].variant.vid, endCountryCode: country, startCountryCode: from });
+          const methods = await quoteFreight({ vid: rows[0].variant.vid, pid, endCountryCode: country, startCountryCode: from });
           logistics = methods[0]?.name || "";
         } catch (e) { console.warn("Freight skipped:", e.message); }
       }
@@ -1322,7 +1694,7 @@ app.post("/api/profit", requireAuth, (req, res) => {
 // ── Admin endpoints ─────────────────────────────────────
 app.get("/api/admin/users", requireAuth, requireAdmin, async (req, res) => {
   const [{ data: profiles }, { data: policies }, { data: deviceRows }, { data: keyRows }] = await Promise.all([
-    supabase.from("profiles").select("id, email, full_name, created_at, updated_at, is_admin, is_online, last_seen"),
+    supabase.from("profiles").select("id, email, full_name, username, phone, created_at, updated_at, is_admin, is_online, last_seen"),
     supabase.from("admin_policies").select("*"),
     supabase.from("user_devices").select("user_id, device_id, user_agent, ip_address, is_blocked, last_seen"),
     supabase.from("user_api_keys").select("user_id, key_fingerprint")
@@ -1345,7 +1717,7 @@ app.get("/api/admin/users", requireAuth, requireAdmin, async (req, res) => {
   res.json({ users });
 });
 
-// Admin: active/online users count
+// Admin: active/online users count + list
 app.get("/api/admin/active-users", requireAuth, requireAdmin, async (req, res) => {
   try {
     // GC stale first
@@ -1376,6 +1748,23 @@ app.get("/api/admin/active-users", requireAuth, requireAdmin, async (req, res) =
     });
   } catch (err) {
     res.status(500).json({ error: err?.message || "Failed to fetch active users." });
+  }
+});
+
+// Admin: list of online users (with names)
+app.get("/api/admin/online-users", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    await gcOnlineUsers();
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, full_name, username, email, last_seen, avatar_url")
+      .eq("is_online", true)
+      .order("last_seen", { ascending: false });
+    if (error) return res.status(500).json({ error: error.message });
+
+    res.json({ users: data || [] });
+  } catch (err) {
+    res.status(500).json({ error: err?.message || "Failed to fetch online users." });
   }
 });
 

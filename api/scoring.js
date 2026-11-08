@@ -61,7 +61,11 @@ function slugify(name) {
 
 function buildProductUrl(name, id) {
   if (!id) return null;
-  return `https://cjdropshipping.com/product/${slugify(name)}-p-${encodeURIComponent(String(id))}.html`;
+  // CJ product URL format: https://www.cjdropshipping.com/product/-p-{productId}.html
+  // The slug is OPTIONAL — CJ resolves the product from the -p-{id} suffix alone.
+  // Including a slug that doesn't match CJ's internal slug causes "Product removed".
+  // Verified via Apify CJ scraper output: canonical URLs use empty slug.
+  return `https://www.cjdropshipping.com/product/-p-${encodeURIComponent(String(id))}.html`;
 }
 
 export function recommendSellingSites({ category, name }) {
@@ -114,8 +118,11 @@ export function recommendSellingSites({ category, name }) {
   return picks.slice(0, 5);
 }
 
-export function analyzeProduct(raw) {
-  const id = firstDefined(raw, ["id", "pid", "productId", "product_id", "sku"]);
+export function analyzeProduct(raw, originalId = null) {
+  // Prefer originalId (numeric from listV2) over detail response's pid (UUID)
+  // CJ product URLs require the numeric ID, not the UUID
+  const rawId = firstDefined(raw, ["id", "productId", "product_id", "sku"]);
+  const id = originalId || rawId;
   const name = parseName(firstDefined(raw, ["nameEn", "productNameEn", "productName", "name", "title"]))
     || "Unnamed CJ product";
   const image = parseImage(firstDefined(raw, ["bigImage", "productImage", "image", "imageUrl"]));
@@ -132,6 +139,7 @@ export function analyzeProduct(raw) {
   const deliveryCycle = firstDefined(raw, ["deliveryCycle"]);
   const deliveryDays = deliveryCycle ? numberOrNull(String(deliveryCycle).split("-").pop()) : null;
   const category = parseName(firstDefined(raw, ["threeCategoryName", "categoryName", "twoCategoryName", "oneCategoryName"]));
+  const categoryId = firstDefined(raw, ["threeCategoryId", "twoCategoryId", "oneCategoryId", "categoryId"]);
   const currency = firstDefined(raw, ["currency"]) || "USD";
   const suggest = parsePrice(firstDefined(raw, ["suggestSellPrice"]));
   const supplierNameValue = firstDefined(raw, ["supplierName"]);
@@ -245,8 +253,9 @@ export function analyzeProduct(raw) {
       ? "Needs manual review"
       : "Insufficient evidence";
 
+  const finalId = id === null ? null : String(id);
   return {
-    id: id === null ? null : String(id),
+    id: finalId,
     sku: firstDefined(raw, ["sku", "productSku", "spu"]) ? String(firstDefined(raw, ["sku", "productSku", "spu"])) : null,
     name: String(name),
     image: image || null,
@@ -267,6 +276,7 @@ export function analyzeProduct(raw) {
     hasVideo,
     verifiedWarehouse,
     category,
+    categoryId: categoryId !== null ? String(categoryId) : null,
     deliveryCycle: deliveryCycle ? String(deliveryCycle) : null,
     deliveryDays,
     quickDelivery: deliveryDays !== null && deliveryDays > 0 && deliveryDays <= 10,

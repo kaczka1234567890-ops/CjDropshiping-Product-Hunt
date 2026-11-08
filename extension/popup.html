@@ -18,13 +18,24 @@
       <div id="nameWrap" hidden>
         <label for="authName">Full name (optional)</label>
         <input id="authName" type="text" autocomplete="name" placeholder="Your name">
+        <label for="authUsername">Username (optional)</label>
+        <input id="authUsername" type="text" autocomplete="username" placeholder="your_username">
+        <label for="authPhone">Phone (optional)</label>
+        <input id="authPhone" type="tel" autocomplete="tel" placeholder="+880 1XXX-XXXXXX">
       </div>
 
       <label for="authEmail">Email</label>
       <input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com">
 
       <label for="authPassword">Password</label>
-      <input id="authPassword" type="password" autocomplete="current-password" placeholder="••••••••">
+      <div class="pwd-row">
+        <input id="authPassword" type="password" autocomplete="current-password" placeholder="••••••••">
+        <button type="button" class="pwd-toggle" id="pwdToggle" title="Show/hide password">👁</button>
+      </div>
+      <label class="save-pwd-row">
+        <input type="checkbox" id="savePasswordChk">
+        <span>💾 Save password (stored locally, encrypted)</span>
+      </label>
 
       <button class="btn-full" id="authBtn" type="button">Sign in</button>
 
@@ -33,8 +44,12 @@
         <button id="toggleAuth" type="button">Sign up</button>
       </p>
 
-      <p class="auth-hint">Only setup needed: paste your CJdropshipping API key once
-        (<code>My CJ → API</code>) — then search, score and list products.</p>
+      <p class="auth-hint">
+        Setup (one-time): go to
+        <a href="https://www.cjdropshipping.com/my.html#/authorize/API" target="_blank" rel="noopener" class="api-link">CJ API Settings → Generate API Key</a>
+        and copy your API key. Then paste it below and click <strong>Connect CJ Key</strong>.
+        <br><small>Your key is encrypted before storage — we never read it.</small>
+      </p>
     </div>
   </div>
 
@@ -48,8 +63,9 @@
       </div>
       <div class="user-bar" id="userBar">
         <span class="email" id="userEmail" title=""></span>
+        <button type="button" class="btn-sm" id="profileBtn" title="Profile settings">👤</button>
         <button type="button" class="btn-sm" id="themeToggle" title="Toggle dark/light mode">🌙</button>
-        <a href="https://cj-winning-product-hunter-poc.vercel.app/help" target="_blank" class="btn-sm" title="A-Z help guide" style="text-decoration:none">❓</a>
+        <a href="https://cj-winning-product-hunter-poc.vercel.app/help" target="_blank" class="btn-sm help-btn" title="A-Z help guide" style="text-decoration:none">❓</a>
         <button type="button" class="btn-sm" id="settingsBtn" title="CJdropshipping API Key">⚙ Key</button>
         <button type="button" class="btn-sm" id="logoutBtn">Logout</button>
       </div>
@@ -66,6 +82,8 @@
         <label>Max stock<input type="number" id="fMaxStock" min="0" step="1" placeholder="5000"></label>
         <label>Min sellers (listed by)<input type="number" id="fMinListed" min="0" step="1" placeholder="e.g. 1"></label>
         <label>Max sellers (listed by)<input type="number" id="fMaxListed" min="0" step="1" placeholder="e.g. 5"></label>
+        <label>Min orders (MOQ)<input type="number" id="fMinOrders" min="0" step="1" placeholder="e.g. 10"></label>
+        <label>Max orders<input type="number" id="fMaxOrders" min="0" step="1" placeholder="e.g. 1000"></label>
         <label>Max days since listed<input type="number" id="fMaxDays" min="0" step="1" placeholder="e.g. 30 (only show ≤ N days old)"></label>
         <label>Deliver to:
           <select id="fDeliverTo">
@@ -90,13 +108,45 @@
     </details>
 
     <form id="searchForm" class="search">
-      <input id="query" placeholder="e.g. desk lamp" autocomplete="off">
+      <input id="query" placeholder="e.g. desk lamp — or pick a category below" autocomplete="off">
       <button type="submit" id="searchButton">Hunt</button>
     </form>
 
+    <div class="category-row">
+      <label for="categorySelect">📂 Browse category (no keyword needed):</label>
+      <select id="categorySelect">
+        <option value="">— Select a category —</option>
+        <option value="1">👗 Women's Clothing</option>
+        <option value="2">🐾 Pet Supplies</option>
+        <option value="3">🛋️ Home, Garden &amp; Furniture</option>
+        <option value="4">💄 Health, Beauty &amp; Hair</option>
+        <option value="5">💍 Jewelry &amp; Watches</option>
+        <option value="6">👔 Men's Clothing</option>
+        <option value="7">🎒 Bags &amp; Shoes</option>
+        <option value="8">🧸 Toys, Kids &amp; Babies</option>
+        <option value="9">⚽ Sports &amp; Outdoors</option>
+        <option value="10">📱 Consumer Electronics</option>
+        <option value="11">🔧 Home Improvement</option>
+        <option value="12">🚗 Automobiles &amp; Motorcycles</option>
+        <option value="13">📞 Phones &amp; Accessories</option>
+        <option value="14">💻 Computer &amp; Office</option>
+      </select>
+      <button type="button" id="categoryHuntBtn" class="chip">🎯 Hunt by category</button>
+    </div>
+
     <div class="modes">
-      <button type="button" id="trendingButton" class="chip">🔥 Trending</button>
+      <button type="button" id="trendingButton" class="chip">🔥 Trending winners</button>
       <button type="button" id="bestSellingButton" class="chip">🛒 Best-Selling</button>
+      <button type="button" id="bestSellerSupplierButton" class="chip">🏆 Best Supplier</button>
+      <button type="button" id="resetFilters" class="chip">↺ Reset filters</button>
+    </div>
+    <div class="results-tools">
+      <button type="button" id="exportCsvBtn" class="chip-sm" title="Export current results to CSV" hidden>⬇ Export CSV</button>
+      <span id="exportStatus" class="export-status"></span>
+    </div>
+    <div class="keyword-row">
+      <div class="saved-keywords" id="savedKeywords"></div>
+      <button type="button" id="saveKeywordBtn" class="chip-sm" title="Save current keyword">💾 Save keyword</button>
     </div>
     <div class="country-filter" id="countryFilterBar" hidden>
       <label for="bestSellerCountry">🌍 Ship to:</label>
@@ -133,6 +183,12 @@
         <option value="BE">🇧🇪 Belgium</option>
         <option value="AT">🇦🇹 Austria</option>
       </select>
+      <label for="bestSellerSort">📊 Sort by:</label>
+      <select id="bestSellerSort">
+        <option value="90d">90-day sales</option>
+        <option value="30d">30-day sales</option>
+        <option value="7d">7-day sales</option>
+      </select>
     </div>
 
     <div id="status" class="status">Ready</div>
@@ -158,6 +214,49 @@
         <button class="modal-close" id="listingClose" type="button">×</button>
         <div id="listingBody"></div>
       </div>
+    </div>
+  </div>
+
+  <!-- Profile settings -->
+  <div id="profileModal" class="modal" hidden>
+    <div class="modal-card">
+      <button class="modal-close" id="profileClose" type="button">×</button>
+      <h3>👤 Profile Settings</h3>
+      <p class="mdesc">Update your name, username, phone and password. Leave fields blank to keep current.</p>
+      <div class="mrow"><span>Current email</span><strong id="profileEmail">—</strong></div>
+      <div class="set-row">
+        <label for="profileFullName">Full name</label>
+        <input id="profileFullName" type="text" placeholder="Your full name">
+      </div>
+      <div class="set-row">
+        <label for="profileUsername">Username</label>
+        <input id="profileUsername" type="text" placeholder="your_username (3-30 chars)">
+      </div>
+      <div class="set-row">
+        <label for="profilePhone">Phone</label>
+        <input id="profilePhone" type="tel" placeholder="+880 1XXX-XXXXXX">
+      </div>
+      <details class="pwd-section">
+        <summary>🔒 Change password</summary>
+        <div class="set-row" style="margin-top:8px">
+          <label for="profileCurrentPwd">Current password</label>
+          <div class="pwd-row">
+            <input id="profileCurrentPwd" type="password" placeholder="Current password">
+            <button type="button" class="pwd-toggle" data-target="profileCurrentPwd">👁</button>
+          </div>
+        </div>
+        <div class="set-row">
+          <label for="profileNewPwd">New password</label>
+          <div class="pwd-row">
+            <input id="profileNewPwd" type="password" placeholder="New password (min 8 chars)">
+            <button type="button" class="pwd-toggle" data-target="profileNewPwd">👁</button>
+          </div>
+        </div>
+      </details>
+      <div class="mactions">
+        <button type="button" class="btn-full" id="profileSave">Save Changes</button>
+      </div>
+      <div class="set-status" id="profileStatus" role="status"></div>
     </div>
   </div>
 

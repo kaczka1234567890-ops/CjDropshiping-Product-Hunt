@@ -34,7 +34,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// ── Per-request API key (multi-user safe) ────────────────
+// ── Per-request API key (multi-user safe) ────────
 // The cloud backend serves many users from one process, so the CJ key must
 // never be a module-level global. Every request runs inside runWithApiKey(),
 // and resolveApiKey() picks the key of *that* request's user.
@@ -88,45 +88,42 @@ export function clearTokenCache() {
 export function primeTokenCache(apiKey, { accessToken, expiresAt = null }) {
   writeTokenCache({
     accessToken,
-    expiresAt,
+    expiresAt: expiresAt || null,
     obtainedAt: new Date().toISOString(),
     keyFp: apiKeyFingerprint(apiKey)
   });
 }
 
-function isApiKey(token) {
-  return token.includes("@api@");
+function isApiKey(key) {
+  // API Keys usually contain "@api@" to distinguish from short-lived access tokens.
+  return typeof key === "string" && key.includes("@api@");
 }
 
 async function exchangeApiKey(apiKey) {
-  const run = async () => {
-    const wait = Math.max(0, MIN_REQUEST_GAP_MS - (Date.now() - lastRequestAt));
-    if (wait > 0) await sleep(wait);
-    lastRequestAt = Date.now();
-    return fetch(`${BASE_URL}${AUTH_PATH}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify({ apiKey }),
-      signal: AbortSignal.timeout(20000)
-    });
-  };
-  const task = requestChain.then(run, run);
-  requestChain = task.catch(() => {});
-  const response = await task;
-
-  const body = await response.json().catch(() => null);
-  if (!response.ok || !body?.data?.accessToken) {
-    const error = new Error("CJ token exchange failed");
+  // Use direct fetch — NOT callCj. callCj calls fetchAccessToken which calls
+  // exchangeApiKey, creating infinite recursion.
+  const res = await fetch(`${BASE_URL}${AUTH_PATH}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ apiKey }),
+    signal: AbortSignal.timeout(CJ_TIMEOUT_MS)
+  });
+  const body = await res.json().catch(() => ({}));
+  const data = body?.data;
+  if (!data || !data.accessToken) {
+    const error = new Error("Could not exchange API key for access token");
     error.status = 502;
-    error.publicMessage = body?.message
-      ? `CJ rejected the API Key: ${body.message}`
-      : "CJ did not return an access token. Verify your API Key in the CJ dashboard (My CJ → API).";
+    error.publicMessage = `CJ rejected the API Key exchange: ${body?.message || JSON.stringify(body)}`;
     throw error;
   }
-
+  // CJ does NOT return expiresAt — set a 24h default so the token cache works.
+  // Without this, fetchAccessToken calls exchangeApiKey on EVERY request.
+  const expiresAt = data.expiresAt
+    ? new Date(data.expiresAt).toISOString()
+    : new Date(Date.now() + 24 * 3600 * 1000).toISOString();
   return {
-    accessToken: body.data.accessToken,
-    expiresAt: body.data.accessTokenExpiryDate || null
+    accessToken: data.accessToken,
+    expiresAt
   };
 }
 
@@ -150,7 +147,7 @@ export async function validateApiKey(apiKey) {
     }
   }
 
-  // No "@api@": maybe a CJ access token — verify it with a light authenticated call.
+  // No "@@": maybe a CJ access token — verify it with a light authenticated call.
   try {
     const probe = await fetch(`${BASE_URL}${SHOPS_PATH}`, {
       headers: { "CJ-Access-Token": key, "Accept": "application/json" },
@@ -294,7 +291,7 @@ async function callCj(path, params = {}, { method = "GET" } = {}) {
     throw error;
   }
 
-  return { body, note: body?.message || null };
+  return { body, note: body?.message || null, rawText: raw };
 }
 
 function flattenListV2(body) {
@@ -314,13 +311,23 @@ export async function searchProducts({
   freeShipping,
   minStock,
   orderBy,
-  sort
+  sort,
+  categoryId
 }) {
   const params = {
     page,
     size: Math.min(100, Math.max(1, pageSize))
   };
-  if (query) params.keyWord = query;
+  // Handle empty string query for category searches
+  if (!query || query === "") {
+    // CJ listV2 uses oneCategoryId for top-level category browsing.
+    // Sending categoryId AND oneCategoryId together returns 0 results — use only one.
+    if (categoryId) {
+      params.oneCategoryId = String(categoryId);
+    }
+  } else if (query) {
+    params.keyWord = query;
+  }
   if (trending) params.productFlag = 0;
   if (minPrice !== undefined && minPrice !== null && minPrice !== "") params.startSellPrice = minPrice;
   if (maxPrice !== undefined && maxPrice !== null && maxPrice !== "") params.endSellPrice = maxPrice;
@@ -333,23 +340,15 @@ export async function searchProducts({
   const { body, note } = await callCj(PRODUCT_LIST_PATH, params);
   const products = flattenListV2(body);
 
-  if (!products.length && !query && !trending) {
+  // Don't throw an error for category searches with empty results — let the caller handle it
+  if (!products.length && !query && !trending && !categoryId) {
     const error = new Error("Empty CJ listV2 response");
     error.status = 502;
     error.publicMessage = "CJ returned no products for this request. Try trending mode or a keyword search.";
     throw error;
   }
 
-  return {
-    products,
-    note,
-    pagination: {
-      total: body?.data?.totalRecords ?? null,
-      totalPages: body?.data?.totalPages ?? null,
-      pageNum: body?.data?.pageNumber ?? page,
-      pageSize: body?.data?.pageSize ?? pageSize
-    }
-  };
+  return { products, pagination: body?.pagination, note };
 }
 
 export async function getProductDetail(pid) {
@@ -362,6 +361,7 @@ export async function getProductDetail(pid) {
     error.publicMessage = "CJ responded, but no product detail was found for this pid.";
     throw error;
   }
+  // Log ALL fields from the detail response — we need to find the numeric ID
   // Extract createrTime from product detail response as fallback
   const clean = (v) => (typeof v === "string" && v.trim() ? v.trim() : null);
   const createrTime = clean(product.createrTime)
@@ -449,7 +449,20 @@ export async function getProductReviews(pid, { full = false } = {}) {
 export async function getProductSalesInfo(pid) {
   const { body } = await callCj(PRODUCT_SALES_PATH, { id: pid }, { method: "POST" });
   const data = body?.data;
-  if (!data || typeof data !== "object") return null;
+  if (!data || typeof data !== "object") {
+    console.log(`[getProductSalesInfo] pid=${pid} — no data in response. body keys:`, Object.keys(body || {}).join(","));
+    return null;
+  }
+  // Log raw sales fields for debugging
+  console.log(`[getProductSalesInfo] pid=${pid} raw fields:`, {
+    orderCount: data.orderCount,
+    soldOut: data.soldOut,
+    totalSales: data.totalSales,
+    totalOrder: data.totalOrder,
+    salesCount: data.salesCount,
+    shopName: data.shop_name,
+    supplierNameEn: data.supplierNameEn
+  });
   const lastPayment = numberOrNullLocal(data.latestPaymentDate);
   const lastOrderDate =
     lastPayment !== null && lastPayment > 0 && lastPayment <= Date.now() + 86400000
@@ -562,156 +575,67 @@ export async function getProductReviewsLite(pid) {
     ? Number((scores.reduce((sum, v) => sum + v, 0) / scores.length).toFixed(1))
     : null;
   const latestDate = list[0]?.commentDate ? String(list[0].commentDate).slice(0, 10) : null;
-  return {
-    total: total !== null ? total : list.length,
-    avgScore,
-    latestDate
-  };
-}
 
-function strict(body, label) {
-  if (body && (body.success === false || (body.result === false && body.code !== 200))) {
-    const error = new Error(`${label}: ${body.message || body.code}`);
-    error.status = 502;
-    error.publicMessage = `CJ error ${body.code}: ${body.message || "unknown error"}`;
-    error.cjCode = body.code;
-    throw error;
-  }
-  return body;
+  return {
+    total,
+    avgScore,
+    latestDate,
+    list: list.slice(0, 5).map((c) => ({
+      score: numberOrNullLocal(c?.score),
+      user: c?.commentUser ? String(c.commentUser) : null,
+      country: c?.countryCode ? String(c.countryCode) : null,
+      date: c?.commentDate ? String(c.commentDate).slice(0, 10) : null,
+      text: c?.comment ? String(c.comment).slice(0, 150) : null
+    }))
+  };
 }
 
 export async function getCjStores() {
-  const { body } = await callCj(SHOPS_PATH);
-  const list = Array.isArray(body?.data) ? body.data : [];
-  return list
-    .map((s) => ({
-      id: String(s.id ?? ""),
-      name: String(s.name || s.aliasName || s.id || ""),
-      type: String(s.type || "").toLowerCase(),
-      status: Number(s.status),
-      currency: s.currencyCode || null,
-      logo: s.platformLogoUrl || null
-    }))
-    .filter((s) => s.id && s.status === 1);
+  const { body } = await callCj(SHOPS_PATH, {}, { method: "GET" });
+  const data = body?.data;
+  if (!Array.isArray(data)) return [];
+  return data.map((s) => ({
+    id: s.shopId || s.id,
+    name: s.shopName || s.name,
+    logo: s.shopLogo || s.logo
+  }));
 }
 
 export async function getVariantList(pid) {
-  const { body } = await callCj(VARIANT_QUERY_PATH, { pid });
-  const list = Array.isArray(body?.data) ? body.data : [];
-  return list.map((v) => {
-    const key = typeof v.variantKey === "string" && v.variantKey ? v.variantKey : null;
-    let color = null;
-    let size = null;
-    if (key) {
-      const parts = key.split("-");
-      color = parts.length > 1 ? parts.slice(0, -1).join("-") : parts[0];
-      size = parts.length > 1 ? parts[parts.length - 1] : null;
-    }
-    return {
-      vid: String(v.vid || ""),
-      sku: v.variantSku || "",
-      name: v.variantNameEn || v.variantName || key || "",
-      image: v.variantImage || null,
-      color,
-      size,
-      weight: numberOrNullLocal(v.variantWeight),
-      length: numberOrNullLocal(v.variantLength),
-      width: numberOrNullLocal(v.variantWidth),
-      height: numberOrNullLocal(v.variantHeight),
-      cjPrice: numberOrNullLocal(v.variantSellPrice),
-      suggestedPrice: numberOrNullLocal(v.variantSugSellPrice)
-    };
-  }).filter((v) => v.vid);
+  // variant/query requires GET — POST returns CJ error 16900202
+  const { body } = await callCj(VARIANT_QUERY_PATH, { pid, pageNum: 1, pageSize: 50 }, { method: "GET" });
+  return body?.data || [];
 }
 
-export async function quoteFreight({ vid, quantity = 1, startCountryCode = "CN", endCountryCode = "US" } = {}) {
-  const { body } = await callCj(
-    FREIGHT_PATH,
-    { startCountryCode, endCountryCode, products: [{ vid, quantity }] },
-    { method: "POST" }
-  );
-  const list = Array.isArray(body?.data) ? body.data : [];
-  return list
-    .map((m) => ({
-      name: m.logisticName || m.option?.enName || null,
-      price: numberOrNullLocal(m.logisticPrice),
-      aging: m.logisticAging ? String(m.logisticAging) : null
-    }))
-    .filter((m) => m.name && m.price !== null)
-    .sort((a, b) => a.price - b.price);
-}
-
-export async function saveStoreProduct({ id, shopId, title, image, description, priceMin, priceMax, currency = "USD" }) {
-  const body = strict(
-    (await callCj(STORE_PRODUCT_SAVE_PATH, {
-      id,
-      ...(shopId ? { shopId } : {}),
-      title,
-      ...(image ? { image } : {}),
-      ...(description ? { description } : {}),
-      priceMin,
-      priceMax,
-      priceCurrency: currency
-    }, { method: "POST" })).body,
-    "saveStoreProduct"
-  );
-  return body?.data === true;
-}
-
-export async function getStoreProductVariants(shopId, platformProductId) {
-  const { body } = await callCj(SHOP_PRODUCT_DETAIL_PATH, { shopId, platformProductIds: platformProductId });
-  const list = Array.isArray(body?.data) ? body.data : [];
-  const product = list.find((p) => String(p.platformProductId) === String(platformProductId)) || list[0] || null;
-  const variants = Array.isArray(product?.variants) ? product.variants : [];
-  return {
-    product,
-    variants: variants.map((v) => ({
-      platformVariantId: String(v?.platformVariantId ?? ""),
-      sku: v?.platformVariantSku ? String(v.platformVariantSku) : null,
-      price: v?.price === undefined || v?.price === null ? null : Number(v.price)
-    }))
+export async function quoteFreight(params) {
+  // freightCalculate requires: { endCountryCode, startCountryCode, products: [{ vid, pid, quantity }] }
+  const { vid, pid, endCountryCode, startCountryCode, ...rest } = params;
+  const body = {
+    endCountryCode,
+    startCountryCode,
+    products: [{ vid, pid, quantity: 1 }],
+    ...rest
   };
+  const { body: respBody } = await callCj(FREIGHT_PATH, body, { method: "POST" });
+  return respBody?.data;
 }
 
-export async function saveStoreVariants({ shopId, variants }) {
-  const body = strict(
-    (await callCj(STORE_VARIANT_SAVE_PATH, { shopId, variants }, { method: "POST" })).body,
-    "saveStoreVariants"
-  );
-  const rows = Array.isArray(body?.data) ? body.data : [];
-  return {
-    saved: rows.filter((r) => r?.saveSuccess).length,
-    failed: rows.filter((r) => r && r.saveSuccess === false).map((r) => r.saveFailMessage || r.id),
-    rows
-  };
+export async function saveStoreProduct(params) {
+  const { body } = await callCj(STORE_PRODUCT_SAVE_PATH, params, { method: "POST" });
+  return body;
 }
 
-export async function createProductConnection({
-  shopId,
-  cjProductId,
-  platformProductId,
-  defaultArea = 1,
-  logistics,
-  sourceCountryCode = "CN",
-  sourceCountry = "China",
-  targetCountryCode = "US",
-  targetCountry = "United States",
-  variantList
-}) {
-  const body = strict(
-    (await callCj(PRODUCT_CONNECTION_PATH, {
-      shopId,
-      defaultArea,
-      logistics,
-      cjProductId,
-      platformProductId,
-      sourceCountryCode,
-      sourceCountry,
-      targetCountryCode,
-      targetCountry,
-      variantList
-    }, { method: "POST" })).body,
-    "createProductConnection"
-  );
-  return body?.data === true;
+export async function saveStoreVariants(params) {
+  const { body } = await callCj(STORE_VARIANT_SAVE_PATH, params, { method: "POST" });
+  return body;
+}
+
+export async function createProductConnection(params) {
+  const { body } = await callCj(PRODUCT_CONNECTION_PATH, params, { method: "POST" });
+  return body;
+}
+
+export async function getStoreProductVariants(productId) {
+  const { body } = await callCj(SHOP_PRODUCT_DETAIL_PATH, { productId }, { method: "POST" });
+  return body?.data;
 }

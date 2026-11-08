@@ -64,25 +64,116 @@ document.getElementById("logoutBtn").addEventListener("click", async () => {
   window.location.href = "/";
 });
 
+// ── Online users badge ─────────────────────────────────────
+async function loadOnlineCount() {
+  try {
+    const { online } = await api("/admin/active-users");
+    document.getElementById("onlineCount").textContent = online || 0;
+  } catch { /* ignore */ }
+}
+setInterval(loadOnlineCount, 30000);
+
+// Initial load for Users tab
+document.addEventListener("DOMContentLoaded", () => {
+  // Check if we're on admin page
+  if (document.getElementById("tab-users")) {
+    // Load online users when users tab is active
+    const usersTab = document.querySelector('.tab[data-tab="users"]');
+    if (usersTab && usersTab.classList.contains("active")) {
+      loadUsers();
+      loadOnlineUsers();
+    }
+  }
+});
+
 // ── Tabs ─────────────────────────────────────────────────
+let onlineUsersRefreshInterval = null;
+
+function startOnlineUsersRefresh() {
+  stopOnlineUsersRefresh();
+  // Refresh online users every 20 seconds while Users tab is active
+  onlineUsersRefreshInterval = setInterval(() => {
+    const usersTab = document.querySelector('.tab[data-tab="users"]');
+    if (usersTab && usersTab.classList.contains("active")) {
+      loadOnlineUsers();
+      loadOnlineCount();
+    }
+  }, 20000);
+}
+
+function stopOnlineUsersRefresh() {
+  if (onlineUsersRefreshInterval) {
+    clearInterval(onlineUsersRefreshInterval);
+    onlineUsersRefreshInterval = null;
+  }
+}
+
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
     document.querySelectorAll(".tab-content").forEach((c) => c.classList.add("hidden"));
     tab.classList.add("active");
     document.getElementById(`tab-${tab.dataset.tab}`).classList.remove("hidden");
-    if (tab.dataset.tab === "users") loadUsers();
+    if (tab.dataset.tab === "users") {
+      loadUsers();
+      loadOnlineUsers();
+      startOnlineUsersRefresh();
+    } else {
+      stopOnlineUsersRefresh();
+    }
     if (tab.dataset.tab === "usage") loadUsage();
     if (tab.dataset.tab === "settings") loadSettings();
   });
 });
 
+// ── Online Users ──────────────────────────────────────────
+async function loadOnlineUsers() {
+  try {
+    const { users } = await api("/admin/online-users");
+    const grid = document.getElementById("onlineUsersGrid");
+    const countEl = document.getElementById("onlineUsersCount");
+    if (!grid) return;
+    countEl.textContent = users.length;
+    if (!users.length) {
+      grid.innerHTML = '<div class="online-user-empty">No users currently online</div>';
+      return;
+    }
+    grid.innerHTML = users.map((u) => {
+      const displayName = u.full_name || u.username || u.email || "Unknown";
+      const initial = displayName.charAt(0).toUpperCase();
+      const lastSeen = u.last_seen ? new Date(u.last_seen).toLocaleTimeString() : "—";
+      return `
+        <div class="online-user-card" data-user-id="${esc(u.id)}" style="cursor:pointer">
+          <div class="online-user-avatar">${esc(initial)}</div>
+          <div class="online-user-name">${esc(displayName)}</div>
+          <div class="online-user-meta">
+            ${u.username ? `<span>@${esc(u.username)}</span>` : ""}
+            <span>${esc(u.email)}</span>
+            <span class="online-user-badge">● Online</span>
+            <span>${esc(lastSeen)}</span>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    // Click to open detail
+    grid.querySelectorAll(".online-user-card").forEach((card) => {
+      card.addEventListener("click", () => openUserDetail(card.dataset.userId));
+    });
+  } catch (error) {
+    const grid = document.getElementById("onlineUsersGrid");
+    if (grid) grid.innerHTML = `<div class="online-user-empty error">${esc(error.message)}</div>`;
+  }
+}
+
 // ── Users ────────────────────────────────────────────────
 async function loadUsers() {
   const list = document.getElementById("userList");
+  const countEl = document.getElementById("totalUsersCount");
   try {
     const { users } = await api("/admin/users");
     emailCache = new Map((users || []).map((u) => [u.id, u.email]));
+    if (countEl) countEl.textContent = users.length;
     if (!users.length) {
       list.innerHTML = '<p class="message">No users yet. Users appear here after they sign up in the extension.</p>';
       return;
@@ -91,11 +182,13 @@ async function loadUsers() {
       const p = u.policy || {};
       const daily = p.daily_api_limit ?? null;
       const monthly = p.monthly_api_limit ?? null;
+      const displayName = u.full_name || u.username || u.email || "?";
+      const subName = u.username && u.full_name ? ` · @${esc(u.username)}` : !u.full_name && u.username ? ` · @${esc(u.username)}` : "";
       return `
         <div class="user-row">
-          <div class="user-avatar">${esc(((u.full_name || u.email || "?")[0] || "?").toUpperCase())}</div>
+          <div class="user-avatar">${esc(((u.full_name || u.username || u.email || "?")[0] || "?").toUpperCase())}</div>
           <div class="user-info">
-            <div class="user-email">${esc(u.email)}${u.full_name ? ` — ${esc(u.full_name)}` : ""}</div>
+            <div class="user-email">${esc(displayName)}${subName}</div>
             <div class="user-meta">
               ${p.is_blocked ? '<span class="user-badge badge-blocked">Blocked</span> ' : '<span class="user-badge badge-ok">Active</span> '}
               ${u.isAdmin ? '<span class="user-badge badge-admin">Admin</span> ' : ""}
@@ -155,8 +248,11 @@ async function openUserDetail(userId) {
   const body = document.getElementById("modalBody");
 
   body.innerHTML = `
-    <h3>${esc(user.email)}</h3>
+    <h3>${esc(user.full_name || user.username || user.email)}</h3>
+    <div class="mrow"><span>Email</span><strong>${esc(user.email)}</strong></div>
     <div class="mrow"><span>Full name</span><strong>${esc(user.full_name || "—")}</strong></div>
+    <div class="mrow"><span>Username</span><strong>${esc(user.username || "—")}</strong></div>
+    <div class="mrow"><span>Phone</span><strong>${esc(user.phone || "—")}</strong></div>
     <div class="mrow"><span>User ID</span><strong style="word-break:break-all">${esc(user.id)}</strong></div>
     <div class="mrow"><span>Joined</span><strong>${new Date(user.created_at).toLocaleString()}</strong></div>
     <div class="mrow"><span>Account status</span><strong>${p.is_blocked ? '<span class="user-badge badge-blocked">Blocked</span>' : '<span class="user-badge badge-ok">Active</span>'}</strong></div>
@@ -359,4 +455,6 @@ document.getElementById("resetAllDaily").addEventListener("click", async () => {
   const user = await checkAuth();
   if (!user) return;
   loadUsers();
+  loadOnlineUsers();
+  startOnlineUsersRefresh();
 })();

@@ -12,11 +12,52 @@ create table if not exists profiles (
   id uuid references auth.users(id) on delete cascade primary key,
   email text not null,
   full_name text,
+  username text,
+  phone text,
   avatar_url text,
   is_admin boolean default false,
+  is_online boolean default false,
+  last_seen timestamptz default now(),
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+
+-- Add missing columns if upgrading from older schema
+alter table profiles add column if not exists username text;
+alter table profiles add column if not exists phone text;
+alter table profiles add column if not exists is_online boolean default false;
+alter table profiles add column if not exists last_seen timestamptz default now();
+
+-- Trigger: auto-create profile + admin_policies when user signs up
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  -- Create profile
+  insert into public.profiles (id, email, full_name, created_at, updated_at)
+  values (new.id, new.email, new.raw_user_meta_data->>'full_name', now(), now())
+  on conflict (id) do update set
+    email = excluded.email,
+    full_name = coalesce(excluded.full_name, profiles.full_name),
+    updated_at = now();
+
+  -- Create admin_policies
+  insert into public.admin_policies (user_id, daily_api_count, monthly_api_count)
+  values (new.id, 0, 0)
+  on conflict (user_id) do nothing;
+
+  return new;
+end;
+$$;
+
+-- Drop old trigger if exists, then create new
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
 
 -- 2. Encrypted CJ API Keys (stored per user)
 create table if not exists user_api_keys (
@@ -67,6 +108,16 @@ create table if not exists admin_policies (
   notes text,
   updated_by uuid references auth.users(id),
   updated_at timestamptz default now()
+);
+
+-- 5b. Saved search keywords (per user)
+create table if not exists saved_keywords (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references auth.users(id) on delete cascade not null,
+  keyword text not null,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  unique(user_id, keyword)
 );
 
 -- 6. Audit log for admin actions

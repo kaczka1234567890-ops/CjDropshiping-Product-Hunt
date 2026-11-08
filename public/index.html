@@ -100,13 +100,20 @@
       <div id="nameWrap" hidden>
         <label for="fullName">Full name (optional)</label>
         <input id="fullName" type="text" autocomplete="name" placeholder="Your name">
+        <label for="username">Username (optional)</label>
+        <input id="username" type="text" autocomplete="username" placeholder="your_username (3-30 chars)">
+        <label for="phone">Phone (optional)</label>
+        <input id="phone" type="tel" autocomplete="tel" placeholder="+880 1XXX-XXXXXX">
       </div>
 
       <label for="email">Email</label>
       <input id="email" type="email" autocomplete="email" placeholder="you@example.com" required>
 
       <label for="password">Password</label>
-      <input id="password" type="password" autocomplete="current-password" placeholder="••••••••" required>
+      <div class="pwd-row">
+        <input id="password" type="password" autocomplete="current-password" placeholder="••••••••" required>
+        <button type="button" class="pwd-toggle" id="pwdToggle" title="Show/hide password">👁</button>
+      </div>
 
       <button class="primary" id="submitBtn" type="submit">Sign in</button>
 
@@ -136,7 +143,18 @@
 
     <div class="hint">
       <strong>Extension users:</strong> install the Chrome extension, sign in there, then paste your
-      CJdropshipping API key once (<code>My CJ → API</code>). Everything else works automatically.
+      CJdropshipping API key once. Everything else works automatically.
+      <br><br>
+      <strong>🔧 How to get your CJ API key:</strong>
+      <ol style="margin:8px 0 0 18px;font-size:12.5px;line-height:1.6;color:var(--muted)">
+        <li>Log in to <a href="https://www.cjdropshipping.com" target="_blank" rel="noopener" style="color:var(--primary)">cjdropshipping.com</a></li>
+        <li>Go to <strong>My Account → API Settings</strong> or click
+          <a href="https://www.cjdropshipping.com/my.html#/authorize/API" target="_blank" rel="noopener" style="color:var(--primary)">this direct link</a></li>
+        <li>Click <strong>Generate API Key</strong></li>
+        <li>Copy the key (format: <code>CJXXXXXXXX@api@XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX</code>)</li>
+        <li>Paste it below → click <strong>Connect CJ Key</strong></li>
+      </ol>
+      <small style="color:var(--muted)">Your key is encrypted before storage — we never read it.</small>
     </div>
   </main>
 
@@ -231,7 +249,9 @@
           body: {
             email,
             password,
-            fullName: document.getElementById("fullName").value.trim() || undefined
+            fullName: document.getElementById("fullName").value.trim() || undefined,
+            username: document.getElementById("username")?.value.trim() || undefined,
+            phone: document.getElementById("phone")?.value.trim() || undefined
           }
         });
         if (!res.ok) throw new Error((data && data.error) || "Request failed.");
@@ -267,6 +287,18 @@
     }
     document.getElementById("memberLogout").addEventListener("click", logout);
     document.getElementById("adminLogout").addEventListener("click", logout);
+
+    // Password visibility toggle
+    const pwdToggle = document.getElementById("pwdToggle");
+    if (pwdToggle) {
+      pwdToggle.addEventListener("click", () => {
+        const pwd = document.getElementById("password");
+        if (!pwd) return;
+        const show = pwd.type === "password";
+        pwd.type = show ? "text" : "password";
+        pwdToggle.textContent = show ? "🙈" : "👁";
+      });
+    }
 
     if (token) afterAuth();
   </script>

@@ -11,6 +11,7 @@
     <div class="brandmark">AD</div>
     <div><div class="brand">Admin Panel</div><div class="subbrand">CJ Product Hunter</div></div>
     <div class="status" id="status">Checking...</div>
+    <div class="online-badge" id="onlineBadge" title="Online users right now">● <span id="onlineCount">0</span> online</div>
     <button type="button" id="logoutBtn" class="btn-secondary">Logout</button>
   </header>
 
@@ -27,7 +28,26 @@
         <h2>Users</h2>
         <button class="btn-secondary" id="refreshUsers">↺ Refresh</button>
       </div>
-      <div id="userList" class="user-list">Loading...</div>
+
+      <div class="users-two-column">
+        <!-- Left: Online Users -->
+        <div class="user-column online-column">
+          <div class="column-head">
+            <h3>🟢 Online Users (<span id="onlineUsersCount">0</span>)</h3>
+            <small>Currently active (last seen ≤ 5 min)</small>
+          </div>
+          <div id="onlineUsersGrid" class="online-users-grid">Loading...</div>
+        </div>
+
+        <!-- Right: All Users -->
+        <div class="user-column all-column">
+          <div class="column-head">
+            <h3>👥 All Users (<span id="totalUsersCount">0</span>)</h3>
+            <small>Everyone registered</small>
+          </div>
+          <div id="userList" class="user-list">Loading...</div>
+        </div>
+      </div>
     </section>
 
     <!-- Usage Tab -->
