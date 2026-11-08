@@ -94,7 +94,7 @@
     <!-- Sign in / sign up -->
     <form id="authForm" novalidate>
       <h2 id="formTitle">Sign in</h2>
-      <p class="sub" id="formSub">Access the admin panel or manage your account.</p>
+      <p class="sub" id="formSub">Get started with CJ Product Hunter.</p>
       <div class="msg" id="authMsg" role="status"></div>
 
       <div id="nameWrap" hidden>
@@ -122,24 +122,6 @@
         <button type="button" id="switchBtn">Sign up</button>
       </p>
     </form>
-
-    <!-- Signed in: non-admin -->
-    <div id="memberView" class="done" hidden>
-      <div class="big">🎉</div>
-      <h2>You're signed in</h2>
-      <p class="sub">This website is only for administrators. To hunt products, open the
-        <strong>CJ Product Hunter</strong> extension in Chrome — it uses this same account.</p>
-      <a class="btn secondary" href="#" id="memberLogout">Sign out</a>
-    </div>
-
-    <!-- Signed in: admin -->
-    <div id="adminView" class="done" hidden>
-      <div class="big">🛡️</div>
-      <h2>Welcome back, admin</h2>
-      <p class="sub">Open the admin panel to manage users, limits, devices and usage.</p>
-      <a class="btn" href="/admin">Open admin panel</a>
-      <a class="btn secondary" href="#" id="adminLogout">Sign out</a>
-    </div>
 
     <div class="hint">
       <strong>Extension users:</strong> install the Chrome extension, sign in there, then paste your
@@ -172,8 +154,8 @@
     const nameWrap = document.getElementById("nameWrap");
     const passwordInput = document.getElementById("password");
 
-    const memberView = document.getElementById("memberView");
-    const adminView = document.getElementById("adminView");
+    const memberView = null; // No longer needed — all users redirect to smtools.online
+    const adminView = null; // No longer needed — all users redirect to smtools.online
 
     let mode = "signin";
     let token = localStorage.getItem(TOKEN_KEY) || "";
@@ -214,14 +196,8 @@
       return { res, data };
     }
 
-    async function afterAuth() {
-      const { res, data } = await api("/auth/me");
-      if (!res.ok) {
-        token = "";
-        localStorage.removeItem(TOKEN_KEY);
-        return;
-      }
-      // Redirect ALL users (admin + member) to SM Tools website after login/signup
+    async function redirectToSmtools() {
+      // Directly redirect — no need to re-call /auth/me (token is already valid)
       window.location.href = "https://www.smtools.online/";
     }
 
@@ -251,19 +227,22 @@
 
         if (mode === "signup") {
           if (data.token) {
-            token = data.token;
-            localStorage.setItem(TOKEN_KEY, token);
-            await afterAuth();
+            // Signup returned session immediately — redirect now
+            localStorage.setItem(TOKEN_KEY, data.token);
+            redirectToSmtools();
+            return;
           } else {
-            setMsg("Account created. Check your email to confirm it, then sign in.", "ok");
+            // Email confirmation required — stay on page, show message
+            setMsg("Account created! Check your email to confirm it, then sign in.", "ok");
             setMode("signin");
+            return;
           }
-          return;
         }
 
+        // Login always returns a token — redirect immediately
         token = data.token;
         localStorage.setItem(TOKEN_KEY, token);
-        await afterAuth();
+        redirectToSmtools();
       } catch (error) {
         setMsg(error.message || "Could not sign in.", "error");
       } finally {
@@ -271,15 +250,23 @@
       }
     });
 
-    async function logout(event) {
-      event.preventDefault();
-      await api("/auth/logout", { method: "POST" }).catch(() => {});
-      token = "";
-      localStorage.removeItem(TOKEN_KEY);
-      location.reload();
+    if (!token) {
+      // Only show logout handlers if the old views might ever appear
+      document.getElementById("memberLogout")?.addEventListener("click", async (event) => {
+        event.preventDefault();
+        await api("/auth/logout", { method: "POST" }).catch(() => {});
+        token = "";
+        localStorage.removeItem(TOKEN_KEY);
+        location.reload();
+      });
+      document.getElementById("adminLogout")?.addEventListener("click", async (event) => {
+        event.preventDefault();
+        await api("/auth/logout", { method: "POST" }).catch(() => {});
+        token = "";
+        localStorage.removeItem(TOKEN_KEY);
+        location.reload();
+      });
     }
-    document.getElementById("memberLogout").addEventListener("click", logout);
-    document.getElementById("adminLogout").addEventListener("click", logout);
 
     // Password visibility toggle
     const pwdToggle = document.getElementById("pwdToggle");
@@ -293,7 +280,10 @@
       });
     }
 
-    if (token) afterAuth();
+    // On page load: if user already has a stored token, redirect to smtools.online
+    if (token) {
+      redirectToSmtools();
+    }
   </script>
 </body>
 </html>
