@@ -51,55 +51,52 @@ function setCachedProductDetail(userId, pid, data) {
 }
 import { analyzeProduct, sortProducts, estimateProfit } from "./scoring.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const projectRoot = path.resolve(__dirname, "..");
-
-// Only load .env file locally; Vercel injects env vars automatically
-if (!process.env.VERCEL) {
-  dotenv.config({ path: path.join(projectRoot, ".env") });
-}
-
 // ── Supabase client (service role — server-side only) ────
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+let SUPABASE_URL = null;
+let SUPABASE_SERVICE_KEY = null;
+let ENCRYPTION_KEY = null;
+let supabase = null;
+let authSupabase = null;
+let initError = null;
 
-if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !ENCRYPTION_KEY) {
-  const missing = [
-    !SUPABASE_URL && "SUPABASE_URL",
-    !SUPABASE_SERVICE_KEY && "SUPABASE_SERVICE_ROLE_KEY",
-    !ENCRYPTION_KEY && "ENCRYPTION_KEY"
-  ].filter(Boolean);
-  console.error(`
-✗ Missing required environment variable(s): ${missing.join(", ")}
-  ENV_VARS: SUPABASE_URL=${!!SUPABASE_URL}, SERVICE_KEY=${!!SUPABASE_SERVICE_KEY}, ENCRYPTION_KEY=${!!ENCRYPTION_KEY}
-`);
-  // Return JSON error instead of process.exit to avoid FUNCTION_INVOCATION_FAILED
-  console.error("STACK:", new Error().stack?.split('\n').slice(0,5).join('\n'));
-  throw new Error(`Missing env vars: ${missing.join(", ")}`);
+try {
+  SUPABASE_URL = process.env.SUPABASE_URL;
+  SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !ENCRYPTION_KEY) {
+    const missing = [
+      !SUPABASE_URL && "SUPABASE_URL",
+      !SUPABASE_SERVICE_KEY && "SUPABASE_SERVICE_ROLE_KEY",
+      !ENCRYPTION_KEY && "ENCRYPTION_KEY"
+    ].filter(Boolean);
+    initError = `Missing required environment variable(s): ${missing.join(", ")}. Check Vercel dashboard → Settings → Environment Variables.`;
+    console.error(`[INIT] ${initError}`);
+  } else if (!/^[0-9a-fA-F]{64}$/.test(ENCRYPTION_KEY)) {
+    initError = "ENCRYPTION_KEY must be 64 hex characters (32 bytes). Generate one with:\n  node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"";
+    console.error(`[INIT] ${initError}`);
+  } else {
+    // The data client ALWAYS talks to PostgREST as the service role:
+    //  · the Authorization header is pinned explicitly, so supabase-js can never
+    //    replace it with an in-memory user session token (which would silently
+    //    turn on RLS for backend queries).
+    supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      global: { headers: { Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }
+    });
+
+    // Separate client for Supabase *Auth* calls (signUp / signIn / getUser / signOut).
+    // Keeping it separate means a session created by a login can never leak into
+    // the data client's requests.
+    authSupabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+    });
+    console.log("[INIT] Supabase clients initialized successfully");
+  }
+} catch (e) {
+  initError = `Failed to initialize Supabase: ${e.message}`;
+  console.error("[INIT]", initError);
 }
-
-if (!/^[0-9a-fA-F]{64}$/.test(ENCRYPTION_KEY)) {
-  console.error("✗ ENCRYPTION_KEY must be 64 hex characters (32 bytes). Generate one with:\n" +
-    '  node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
-  throw new Error('Invalid ENCRYPTION_KEY format');
-}
-
-// The data client ALWAYS talks to PostgREST as the service role:
-//  · the Authorization header is pinned explicitly, so supabase-js can never
-//    replace it with an in-memory user session token (which would silently
-//    turn on RLS for backend queries).
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-  global: { headers: { Authorization: `Bearer ${SUPABASE_SERVICE_KEY}` } }
-});
-
-// Separate client for Supabase *Auth* calls (signUp / signIn / getUser / signOut).
-// Keeping it separate means a session created by a login can never leak into
-// the data client's requests.
-const authSupabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
-});
 
 // A stray rejection must never take the whole server down (Node 26 exits on
 // unhandled rejections; one failed background log would otherwise kill it).
@@ -150,6 +147,19 @@ function maskApiKey(key) {
 // token verification. The auth-only client does NOT have the service-role key,
 // so `authSupabase.auth.getUser(token)` hits RLS on auth.users and returns
 // { user: null }, which the extension interprets as "invalid token".
+
+// Check if Supabase is initialized; return 503 with helpful message if not
+const checkInit = (req, res, next) => {
+  if (initError) {
+    console.error("[INIT ERROR]", initError);
+    return res.status(503).json({
+      error: "Service temporarily unavailable",
+      detail: initError
+    });
+  }
+  next();
+};
+
 function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
