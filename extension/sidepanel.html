@@ -171,8 +171,10 @@
       font-size: 11px; font-weight: 600; cursor: pointer; background: var(--white);
       color: var(--text); transition: all 0.15s;
     }
-    .chip.active, .chip:hover { background: var(--primary); color: white; border-color: var(--primary); }
-    .chip-primary { background: var(--primary); color: white; border-color: var(--primary); }
+    .chip.pill { padding: 7px 14px; border-radius: 999px; font-size: 12px; border-width: 1px; }
+    .chip.pill.active { background: var(--primary); color: white; border-color: var(--primary); }
+    .chip.pill:hover { background: var(--primary); color: white; border-color: var(--primary); }
+    .mode-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
     /* ═══ BS BAR ═══ */
     .bs-bar {
@@ -408,24 +410,26 @@
       <button id="huntBtn">Hunt</button>
     </div>
 
-    <!-- ─── MODE BAR ─── -->
+    <!-- ─── MODE BAR (rounded pill buttons) ─── -->
     <div class="mode-bar">
-      <label style="font-size:12px;color:var(--muted);font-weight:600">📂 Category:</label>
-      <select id="catSelect" class="cat-select">
-        <option value="">— Select a category —</option>
-        <option value="1">👗 Women's Clothing</option><option value="2">🐾 Pet Supplies</option>
-        <option value="3">🛋️ Home, Garden & Furniture</option><option value="4">💄 Health, Beauty & Hair</option>
-        <option value="5">💍 Jewelry & Watches</option><option value="6">👔 Men's Clothing</option>
-        <option value="7">🎒 Bags & Shoes</option><option value="8">🧸 Toys, Kids & Babies</option>
-        <option value="9">⚽ Sports & Outdoors</option><option value="10">📱 Consumer Electronics</option>
-        <option value="11">🔧 Home Improvement</option><option value="12">🚗 Automobiles</option>
-        <option value="13">📞 Phones & Accessories</option><option value="14">💻 Computer & Office</option>
-      </select>
-      <button class="chip" id="catHuntBtn">🎯 Hunt by category</button>
-      <button class="chip" id="trendChip">🔥 Trending</button>
-      <button class="chip" id="bestsellChip">🛒 Best-Selling</button>
-      <button class="chip" id="supplierChip">🏆 Best Supplier</button>
-      <button class="chip" id="resetChip" style="display:none">↺ Reset</button>
+      <div class="mode-group">
+        <label style="font-size:12px;color:var(--muted);font-weight:600;margin-right:8px">📂 Category:</label>
+        <select id="catSelect" class="cat-select">
+          <option value="">— Select a category —</option>
+          <option value="1">👗 Women's Clothing</option><option value="2">🐾 Pet Supplies</option>
+          <option value="3">🛋️ Home, Garden & Furniture</option><option value="4">💄 Health, Beauty & Hair</option>
+          <option value="5">💍 Jewelry & Watches</option><option value="6">👔 Men's Clothing</option>
+          <option value="7">🎒 Bags & Shoes</option><option value="8">🧸 Toys, Kids & Babies</option>
+          <option value="9">⚽ Sports & Outdoors</option><option value="10">📱 Consumer Electronics</option>
+          <option value="11">🔧 Home Improvement</option><option value="12">🚗 Automobiles</option>
+          <option value="13">📞 Phones & Accessories</option><option value="14">💻 Computer & Office</option>
+        </select>
+        <button class="chip pill" id="catHuntBtn">🎯 Hunt by category</button>
+        <button class="chip pill" id="trendChip">🔥 Trending</button>
+        <button class="chip pill active" id="bestsellChip">🛒 Best-Selling</button>
+        <button class="chip pill" id="supplierChip">🏆 Best Supplier</button>
+        <button class="chip pill" id="resetChip" style="display:none">↺ Reset</button>
+      </div>
     </div>
 
     <!-- ─── BS BAR (country + sort) ─── -->
