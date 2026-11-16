@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sign in — CJ Product Hunter</title>
+  <title>CJ Product Hunter — Find Winning Products</title>
   <style>
     :root {
       --primary: #ff7700;
@@ -14,276 +14,335 @@
       --text: #2b2b2b;
       --muted: #6b6b6b;
     }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      padding: 24px;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
-      color: var(--text);
-      background: radial-gradient(1200px 600px at 20% -10%, #fff3e6 0%, #f6f6f7 55%, #f0f0f2 100%);
-    }
-    .card {
-      width: 100%;
-      max-width: 400px;
-      background: #fff;
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 32px 28px;
-      box-shadow: 0 18px 50px rgba(0, 0, 0, .08);
-    }
-    .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }
-    .mark {
-      width: 42px; height: 42px; border-radius: 11px;
-      background: var(--primary); color: #fff;
-      display: grid; place-items: center; font-weight: 800; font-size: 15px;
-    }
-    .brand h1 { margin: 0; font-size: 19px; }
-    .brand p { margin: 2px 0 0; font-size: 12.5px; color: var(--muted); }
-    h2 { margin: 0 0 4px; font-size: 17px; }
-    .sub { margin: 0 0 18px; font-size: 13.5px; color: var(--muted); line-height: 1.5; }
-    label { display: block; font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
-    input {
-      width: 100%; padding: 11px 13px; margin-bottom: 14px;
-      border: 1px solid var(--border); border-radius: 9px;
-      font: inherit; font-size: 14px; background: #fff;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; color: var(--text); background: #f5f5f7; }
+
+    /* Topbar */
+    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; background: #fff; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 20; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 16px; text-decoration: none; color: var(--text); }
+    .mark { width: 34px; height: 34px; border-radius: 9px; background: var(--primary); color: #fff; display: grid; place-items: center; font-size: 13px; font-weight: 800; }
+    .topbar-right { display: flex; gap: 10px; align-items: center; }
+    .tag { font-size: 11px; padding: 4px 10px; border-radius: 999px; background: #fef3c7; color: #92400e; font-weight: 700; }
+    .badge-online { font-size: 12px; padding: 4px 12px; border-radius: 999px; background: #dcfce7; color: var(--success); font-weight: 600; cursor: pointer; }
+    button { border: none; border-radius: 8px; padding: 9px 16px; font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-secondary { background: #fff; border: 1px solid var(--border); color: var(--text); }
+
+    /* Hero */
+    .hero { text-align: center; padding: 48px 24px 32px; }
+    .hero h1 { font-size: 28px; margin-bottom: 10px; }
+    .hero p { color: var(--muted); max-width: 480px; margin: 0 auto 20px; line-height: 1.6; }
+
+    /* Content area */
+    .container { max-width: 1100px; margin: 0 auto; padding: 0 24px 48px; }
+    .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .section-head h2 { font-size: 16px; }
+
+    /* Product grid */
+    .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
+    .product-card { background: #fff; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; transition: box-shadow .15s; }
+    .product-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,.1); }
+    .product-img { width: 100%; height: 160px; object-fit: cover; background: #f0f0f0; }
+    .product-body { padding: 12px 14px; }
+    .product-name { font-size: 13px; font-weight: 600; line-height: 1.4; margin-bottom: 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .product-price { font-size: 15px; font-weight: 800; color: var(--primary); margin-bottom: 4px; }
+    .product-meta { font-size: 11px; color: var(--muted); display: flex; gap: 8px; flex-wrap: wrap; }
+    .empty-state { grid-column: 1 / -1; text-align: center; padding: 60px 20px; color: var(--muted); }
+    .spinner { text-align: center; padding: 40px; color: var(--muted); }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); display: inline-block; animation: spin 1s infinite; margin: 0 3px; }
+
+    /* Auth Modal */
+    .modal-overlay { position: fixed; inset: 0; background: #000000cc; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; }
+    .modal-overlay[hidden] { display: none; }
+    .modal-box { background: #fff; border-radius: 16px; padding: 28px 24px; width: 100%; max-width: 380px; box-shadow: 0 18px 50px rgba(0,0,0,.2); position: relative; }
+    .modal-close { position: absolute; top: 12px; right: 12px; width: 28px; height: 28px; border-radius: 50%; background: #f2f2f2; font-size: 16px; cursor: pointer; border: none; }
+    .modal-title { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
+    .modal-sub { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+    label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+    input[type="email"], input[type="password"], input[type="text"], input[type="tel"] { width: 100%; padding: 10px 12px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 9px; font: inherit; font-size: 14px; }
     input:focus { outline: 2px solid #ffd7b0; border-color: var(--primary); }
-    button.primary {
-      width: 100%; padding: 12px; border: none; border-radius: 9px;
-      background: var(--primary); color: #fff; font: inherit; font-size: 14.5px;
-      font-weight: 700; cursor: pointer;
-    }
-    button.primary:hover { background: var(--primary-dark); }
-    button.primary:disabled { opacity: .55; cursor: not-allowed; }
-    .switch { margin: 16px 0 0; text-align: center; font-size: 13.5px; color: var(--muted); }
-    .switch button {
-      background: none; border: none; padding: 0; font: inherit; font-weight: 700;
-      color: var(--primary); cursor: pointer; text-decoration: underline;
-    }
-    .msg { min-height: 18px; margin: 0 0 10px; font-size: 13px; line-height: 1.45; }
-    .msg.error { color: var(--danger); }
-    .msg.ok { color: var(--success); }
-    .hint {
-      margin-top: 18px; padding: 11px 12px; border: 1px dashed var(--border);
-      border-radius: 9px; font-size: 12.5px; color: var(--muted); line-height: 1.55;
-      background: #fafafa;
-    }
-    .hint code { font-size: 12px; background: #f0f0f0; padding: 1px 5px; border-radius: 4px; }
-    .done { text-align: center; }
-    .done .big { font-size: 40px; margin-bottom: 6px; }
-    a.btn {
-      display: inline-block; margin-top: 14px; padding: 11px 20px; border-radius: 9px;
-      background: var(--primary); color: #fff; text-decoration: none; font-weight: 700; font-size: 14px;
-    }
-    a.btn.secondary { background: #fff; color: var(--text); border: 1px solid var(--border); }
+    .pwd-row { position: relative; margin-bottom: 12px; }
+    .pwd-row input { padding-right: 40px; }
+    .pwd-toggle { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; font-size: 16px; cursor: pointer; padding: 4px; }
+    .modal-submit { width: 100%; padding: 12px; border: none; border-radius: 9px; background: var(--primary); color: #fff; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
+    .modal-submit:hover { background: var(--primary-dark); }
+    .modal-submit:disabled { opacity: .5; cursor: not-allowed; }
+    .modal-msg { min-height: 20px; font-size: 12.5px; margin-bottom: 10px; }
+    .modal-msg.error { color: var(--danger); }
+    .modal-msg.ok { color: var(--success); }
+    .modal-switch { text-align: center; font-size: 13px; color: var(--muted); margin-top: 14px; }
+    .modal-switch button { background: none; border: none; color: var(--primary); font: inherit; font-weight: 700; cursor: pointer; text-decoration: underline; padding: 0; }
+    .field-extra { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .field-extra > div:last-child { grid-column: span 2; }
+
+    footer { text-align: center; padding: 24px; font-size: 12px; color: #aaa; border-top: 1px solid var(--border); }
   </style>
 </head>
 <body>
-  <main class="card">
-    <div class="brand">
-      <div class="mark">PH</div>
-      <div>
-        <h1>CJ Product Hunter</h1>
-        <p>CJdropshipping winning-product research</p>
-      </div>
-    </div>
 
-    <!-- Sign in / sign up -->
+<!-- Topbar -->
+<div class="topbar">
+  <a class="brand" href="/">
+    <div class="mark">PH</div>
+    <div>Product Hunter</div>
+  </a>
+  <div class="topbar-right">
+    <span class="tag">🔥 Trending</span>
+    <span class="badge-online" id="onlineBadge" title="Online now">● <span id="onlineCount">—</span></span>
+    <button class="btn-secondary" id="openAuthBtn">Sign In / Sign Up</button>
+    <button class="btn-secondary" id="logoutBtn" style="display:none">Logout</button>
+  </div>
+</div>
+
+<!-- Hero -->
+<div class="hero">
+  <h1>Find Winning CJ Products</h1>
+  <p>Browse trending dropshipping products from CJdropshipping. Search, analyze sales data, and build your winning store.</p>
+</div>
+
+<!-- Main content -->
+<div class="container">
+  <!-- Online users quick view -->
+  <div class="section-head">
+    <h2>🟢 Active Users Now (<span id="onlineSmallCount">—</span>)</h2>
+  </div>
+  <div id="smallOnlineList" style="margin-bottom:24px;font-size:13px;color:var(--muted)"></div>
+
+  <!-- Products -->
+  <div class="section-head">
+    <h2>🛍️ Today's Best Sellers</h2>
+    <button class="btn-secondary" id="refreshBtn" style="font-size:12px;padding:5px 10px">↺ Refresh</button>
+  </div>
+  <div id="productGrid" class="product-grid">
+    <div class="spinner"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+  </div>
+</div>
+
+<footer>Powered by CJdropshipping API · Winning product research tool</footer>
+
+<!-- Auth Modal -->
+<div id="authModal" class="modal-overlay" hidden>
+  <div class="modal-box">
+    <button class="modal-close" id="closeModal">×</button>
+    <div class="modal-title" id="modalTitle">Sign In</div>
+    <div class="modal-sub" id="modalSub">Sign in or create an account to unlock the full product hunter.</div>
+    <div class="modal-msg" id="authMsg"></div>
+
     <form id="authForm" novalidate>
-      <h2 id="formTitle">Sign in</h2>
-      <p class="sub" id="formSub">Get started with CJ Product Hunter.</p>
-      <div class="msg" id="authMsg" role="status"></div>
-
-      <div id="nameWrap" hidden>
-        <label for="fullName">Full name (optional)</label>
-        <input id="fullName" type="text" autocomplete="name" placeholder="Your name">
-        <label for="username">Username (optional)</label>
-        <input id="username" type="text" autocomplete="username" placeholder="your_username (3-30 chars)">
-        <label for="phone">Phone (optional)</label>
-        <input id="phone" type="tel" autocomplete="tel" placeholder="+880 1XXX-XXXXXX">
+      <div id="signupFields" hidden>
+        <div class="field-extra">
+          <div>
+            <label for="regName">Full Name</label>
+            <input id="regName" type="text" autocomplete="name" placeholder="Your name">
+          </div>
+          <div>
+            <label for="regPhone">Phone</label>
+            <input id="regPhone" type="tel" autocomplete="tel" placeholder="+880 1XXX…">
+          </div>
+          <div style="grid-column:span 2">
+            <label for="regUser">Username <span style="color:#aaa">(optional)</span></label>
+            <input id="regUser" type="text" autocomplete="username" placeholder="your_username">
+          </div>
+        </div>
       </div>
 
-      <label for="email">Email</label>
-      <input id="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+      <label for="regEmail">Email</label>
+      <input id="regEmail" type="email" autocomplete="email" placeholder="you@example.com" required>
 
-      <label for="password">Password</label>
+      <label for="regPass">Password</label>
       <div class="pwd-row">
-        <input id="password" type="password" autocomplete="current-password" placeholder="••••••••" required>
-        <button type="button" class="pwd-toggle" id="pwdToggle" title="Show/hide password">👁</button>
+        <input id="regPass" type="password" autocomplete="current-password" placeholder="••••••••" required>
+        <button type="button" class="pwd-toggle" id="pwdToggle">👁</button>
       </div>
 
-      <button class="primary" id="submitBtn" type="submit">Sign in</button>
-
-      <p class="switch">
-        <span id="switchText">Don't have an account?</span>
-        <button type="button" id="switchBtn">Sign up</button>
-      </p>
+      <button class="modal-submit" id="submitBtn" type="submit">Sign In</button>
     </form>
 
-    <div class="hint">
-      <strong>Extension users:</strong> install the Chrome extension, sign in there, then paste your
-      CJdropshipping API key once. Everything else works automatically.
-      <br><br>
-      <strong>🔧 How to get your CJ API key:</strong>
-      <ol style="margin:8px 0 0 18px;font-size:12.5px;line-height:1.6;color:var(--muted)">
-        <li>Log in to <a href="https://www.cjdropshipping.com" target="_blank" rel="noopener" style="color:var(--primary)">cjdropshipping.com</a></li>
-        <li>Go to <strong>My Account → API Settings</strong> or click
-          <a href="https://www.cjdropshipping.com/my.html#/authorize/API" target="_blank" rel="noopener" style="color:var(--primary)">this direct link</a></li>
-        <li>Click <strong>Generate API Key</strong></li>
-        <li>Copy the key (format: <code>CJXXXXXXXX@api@XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX</code>)</li>
-        <li>Paste it below → click <strong>Connect CJ Key</strong></li>
-      </ol>
-      <small style="color:var(--muted)">Your key is encrypted before storage — we never read it.</small>
+    <div class="modal-switch">
+      <span id="switchText">No account?</span>
+      <button type="button" id="switchBtn">Sign up</button>
     </div>
-  </main>
+  </div>
+</div>
 
-  <script>
-    const TOKEN_KEY = "cj_ph_token";
-    const API = "/api";
+<script>
+(function () {
+  const API = "/api";
+  const TOKEN_KEY = "cj_ph_token";
+  let mode = "signin";
+  let token = localStorage.getItem(TOKEN_KEY) || "";
 
-    const form = document.getElementById("authForm");
-    const msg = document.getElementById("authMsg");
-    const submitBtn = document.getElementById("submitBtn");
-    const switchBtn = document.getElementById("switchBtn");
-    const switchText = document.getElementById("switchText");
-    const formTitle = document.getElementById("formTitle");
-    const formSub = document.getElementById("formSub");
-    const nameWrap = document.getElementById("nameWrap");
-    const passwordInput = document.getElementById("password");
+  // ── DOM refs ────────────────────────────────
+  const onlineCount  = document.getElementById("onlineCount");
+  const onlineSmall  = document.getElementById("onlineSmallCount");
+  const grid         = document.getElementById("productGrid");
+  const refreshBtn   = document.getElementById("refreshBtn");
+  const openAuthBtn  = document.getElementById("openAuthBtn");
+  const logoutBtn    = document.getElementById("logoutBtn");
+  const authModal    = document.getElementById("authModal");
+  const closeBtn     = document.getElementById("closeModal");
+  const authForm     = document.getElementById("authForm");
+  const modalTitle   = document.getElementById("modalTitle");
+  const submitBtn    = document.getElementById("submitBtn");
+  const msgEl        = document.getElementById("authMsg");
+  const switchText   = document.getElementById("switchText");
+  const switchBtn    = document.getElementById("switchBtn");
+  const signupFields = document.getElementById("signupFields");
+  const pwdToggle    = document.getElementById("pwdToggle");
 
-    const memberView = null; // No longer needed — all users redirect to smtools.online
-    const adminView = null; // No longer needed — all users redirect to smtools.online
+  // ── Helpers ─────────────────────────────────
+  function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" })[c]); }
+  function setMsg(text, tone) { msgEl.textContent = text || ""; msgEl.className = "modal-msg" + (tone ? " " + tone : ""); }
+  function setMode(m) {
+    mode = m;
+    const up = mode === "signup";
+    modalTitle.textContent = up ? "Create Account" : "Sign In";
+    submitBtn.textContent = up ? "Create Account" : "Sign In";
+    switchText.textContent = up ? "Already have an account?" : "No account?";
+    switchBtn.textContent = up ? "Sign in" : "Sign up";
+    signupFields.hidden = !up;
+  }
+  switchBtn.addEventListener("click", () => setMode(mode === "signin" ? "signup" : "signin"));
+  pwdToggle.addEventListener("click", () => {
+    const p = document.getElementById("regPass");
+    p.type = p.type === "password" ? "text" : "password";
+    pwdToggle.textContent = p.type === "password" ? "👁" : "🙈";
+  });
 
-    let mode = "signin";
-    let token = localStorage.getItem(TOKEN_KEY) || "";
+  async function apiFetch(path, opts = {}) {
+    const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
+    if (token) headers["Authorization"] = "Bearer " + token;
+    const res = await fetch(API + path, { ...opts, headers });
+    let data;
+    try { data = await res.json(); } catch { data = null; }
+    return { res, data };
+  }
 
-    function setMsg(text, tone) {
-      msg.textContent = text || "";
-      msg.className = "msg" + (tone ? " " + tone : "");
-    }
-
-    function setMode(next) {
-      mode = next;
-      const signingUp = mode === "signup";
-      formTitle.textContent = signingUp ? "Create account" : "Sign in";
-      formSub.textContent = signingUp
-        ? "Create your account for the CJ Product Hunter extension."
-        : "Access the admin panel or manage your account.";
-      submitBtn.textContent = signingUp ? "Create account" : "Sign in";
-      switchText.textContent = signingUp ? "Already have an account?" : "Don't have an account?";
-      switchBtn.textContent = signingUp ? "Sign in" : "Sign up";
-      nameWrap.hidden = !signingUp;
-      passwordInput.autocomplete = signingUp ? "new-password" : "current-password";
-      setMsg("");
-    }
-
-    switchBtn.addEventListener("click", () => setMode(mode === "signin" ? "signup" : "signin"));
-
-    async function api(path, { method = "GET", body } = {}) {
-      const res = await fetch(API + path, {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: "Bearer " + token } : {})
-        },
-        ...(body ? { body: JSON.stringify(body) } : {})
-      });
-      let data = null;
-      try { data = await res.json(); } catch { /* empty body */ }
-      return { res, data };
-    }
-
-    async function redirectToSmtools() {
-      // Directly redirect — no need to re-call /auth/me (token is already valid)
-      window.location.href = "https://www.smtools.online/";
-    }
-
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const email = document.getElementById("email").value.trim();
-      const password = document.getElementById("password").value;
-      if (!email || !password) return setMsg("Enter your email and password.", "error");
-      if (mode === "signup" && password.length < 8) {
-        return setMsg("Password must be at least 8 characters.", "error");
+  // ── Load trending products (public view) ────
+  async function loadProducts() {
+    grid.innerHTML = '<div class="spinner"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>';
+    try {
+      // Call public endpoint (no auth required)
+      const { res, data } = await apiFetch("/public/products?trending=1&pageSize=8");
+      if (!res.ok) throw new Error((data && data.error) || "Failed to load");
+      const products = data.products || [];
+      if (!products.length) {
+        grid.innerHTML = '<div class="empty-state">Loading products… please wait a moment.</div>';
+        return;
       }
+      grid.innerHTML = products.map(p => `
+        <div class="product-card">
+          <img class="product-img" src="${esc(p.image || "")}" alt="${esc(p.name)}" loading="lazy" onerror="this.style.display='none'">
+          <div class="product-body">
+            <div class="product-name">${esc(p.name)}</div>
+            <div class="product-price">$${p.cjCost != null ? p.cjCost.toFixed(2) : "?"}</div>
+            <div class="product-meta">
+              ${p.score ? `<span>⭐ ${p.score}/100</span>` : ""}
+              ${p.sold7d ? `<span>📦 7d: ${p.sold7d}</span>` : ""}
+              ${p.category ? `<span>${esc(p.category)}</span>` : ""}
+            </div>
+          </div>
+        </div>`).join("");
+    } catch (err) {
+      grid.innerHTML = `<div class="empty-state" style="color:var(--danger)">⚠ ${esc(err.message)}</div>`;
+    }
+  }
 
-      submitBtn.disabled = true;
-      setMsg(mode === "signup" ? "Creating your account…" : "Signing in…");
-      try {
-        const { res, data } = await api("/auth/" + (mode === "signup" ? "signup" : "login"), {
-          method: "POST",
-          body: {
-            email,
-            password,
-            fullName: document.getElementById("fullName").value.trim() || undefined,
-            username: document.getElementById("username")?.value.trim() || undefined,
-            phone: document.getElementById("phone")?.value.trim() || undefined
-          }
-        });
-        if (!res.ok) throw new Error((data && data.error) || "Request failed.");
+  // ── Load online users count ─────────────────
+  async function loadOnlineCount() {
+    try {
+      const { data } = await apiFetch("/admin/active-users");
+      if (data) {
+        const n = data.online || 0;
+        if (onlineCount) onlineCount.textContent = n;
+        if (onlineSmall) onlineSmall.textContent = n;
+      }
+    } catch { /* ignore */ }
+  }
 
-        if (mode === "signup") {
-          if (data.token) {
-            // Signup returned session immediately — redirect now
-            localStorage.setItem(TOKEN_KEY, data.token);
-            redirectToSmtools();
-            return;
-          } else {
-            // Email confirmation required — stay on page, show message
-            setMsg("Account created! Check your email to confirm it, then sign in.", "ok");
-            setMode("signin");
-            return;
-          }
+  // ── Open auth modal ────────────────────────
+  function openModal() { authModal.hidden = false; }
+  function closeModal() { authModal.hidden = true; setMsg("", ""); }
+  closeBtn.addEventListener("click", closeModal);
+  authModal.addEventListener("click", e => { if (e.target === authModal) closeModal(); });
+  openAuthBtn.addEventListener("click", openModal);
+
+  // ── Handle form submit ─────────────────────
+  authForm.addEventListener("submit", async e => {
+    e.preventDefault();
+    const email    = document.getElementById("regEmail").value.trim();
+    const password = document.getElementById("regPass").value;
+    if (!email || !password) return setMsg("Enter email and password.", "error");
+    if (mode === "signup" && password.length < 8) return setMsg("Password must be ≥ 8 characters.", "error");
+
+    submitBtn.disabled = true;
+    setMsg(mode === "signup" ? "Creating account…" : "Signing in…", "");
+
+    try {
+      const { res, data } = await apiFetch("/auth/" + (mode === "signup" ? "signup" : "login"), {
+        method: "POST",
+        body: JSON.stringify({
+          email,
+          password,
+          fullName: mode === "signup" ? document.getElementById("regName").value.trim() || undefined : undefined,
+          username: mode === "signup" ? document.getElementById("regUser").value.trim() || undefined : undefined,
+          phone:    mode === "signup" ? document.getElementById("regPhone").value.trim() || undefined : undefined,
+        })
+      });
+      if (!res.ok) throw new Error(data?.error || "Request failed.");
+
+      if (mode === "signup") {
+        if (data.token) {
+          token = data.token;
+          localStorage.setItem(TOKEN_KEY, token);
+          setMsg("Account created! Redirecting…", "ok");
+          setTimeout(() => {
+            window.location.href = "https://www.smtools.online/";
+          }, 800);
+        } else {
+          setMsg("Account created. Check your email to confirm, then sign in.", "ok");
+          setMode("signin");
         }
-
-        // Login always returns a token — redirect immediately
+      } else {
         token = data.token;
         localStorage.setItem(TOKEN_KEY, token);
-        redirectToSmtools();
-      } catch (error) {
-        setMsg(error.message || "Could not sign in.", "error");
-      } finally {
-        submitBtn.disabled = false;
+        setMsg("Signed in successfully!", "ok");
+        setTimeout(() => {
+          window.location.href = "https://www.smtools.online/";
+        }, 800);
       }
-    });
-
-    if (!token) {
-      // Only show logout handlers if the old views might ever appear
-      document.getElementById("memberLogout")?.addEventListener("click", async (event) => {
-        event.preventDefault();
-        await api("/auth/logout", { method: "POST" }).catch(() => {});
-        token = "";
-        localStorage.removeItem(TOKEN_KEY);
-        location.reload();
-      });
-      document.getElementById("adminLogout")?.addEventListener("click", async (event) => {
-        event.preventDefault();
-        await api("/auth/logout", { method: "POST" }).catch(() => {});
-        token = "";
-        localStorage.removeItem(TOKEN_KEY);
-        location.reload();
-      });
+    } catch (err) {
+      setMsg(err.message || "Could not proceed.", "error");
+    } finally {
+      submitBtn.disabled = false;
     }
+  });
 
-    // Password visibility toggle
-    const pwdToggle = document.getElementById("pwdToggle");
-    if (pwdToggle) {
-      pwdToggle.addEventListener("click", () => {
-        const pwd = document.getElementById("password");
-        if (!pwd) return;
-        const show = pwd.type === "password";
-        pwd.type = show ? "text" : "password";
-        pwdToggle.textContent = show ? "🙈" : "👁";
-      });
-    }
+  // ── Logout ──────────────────────────────────
+  logoutBtn.addEventListener("click", async () => {
+    await apiFetch("/auth/logout", { method: "POST" }).catch(() => {});
+    token = "";
+    localStorage.removeItem(TOKEN_KEY);
+    location.reload();
+  });
 
-    // On page load: if user already has a stored token, redirect to smtools.online
-    if (token) {
-      redirectToSmtools();
-    }
-  </script>
+  refreshBtn.addEventListener("click", loadProducts);
+
+  // ── On page load ───────────────────────────
+  loadProducts();
+  loadOnlineCount();
+  setInterval(loadOnlineCount, 20000);
+
+  // If already logged in → show logout instead of login
+  if (token) {
+    openAuthBtn.style.display = "none";
+    logoutBtn.style.display = "";
+    loadProducts();
+  }
+})();
+</script>
 </body>
 </html>

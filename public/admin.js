@@ -49,6 +49,7 @@ async function checkAuth() {
     const statusEl = document.getElementById("status");
     statusEl.textContent = user.email;
     statusEl.style.color = "#16a34a";
+
     return user;
   } catch {
     document.getElementById("status").textContent = "Access denied";

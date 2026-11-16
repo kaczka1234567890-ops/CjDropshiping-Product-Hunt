@@ -729,6 +729,29 @@ export function getSystemApiKey() {
   return null;
 }
 
+// ── CJ API proxy with system key (for public endpoints) ─────
+async function withSystemKey(res, handler, timeoutMs = 58000) {
+  const effectiveKey = getSystemApiKey();
+  if (!effectiveKey) {
+    throw Object.assign(new Error("CJ API key not configured."), {
+      status: 503,
+      publicMessage: "System API key not configured."
+    });
+  }
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => {
+      const err = new Error("CJ request timed out — too many products to fetch. Try a narrower keyword or fewer products.");
+      err.status = 504;
+      err.publicMessage = err.message;
+      reject(err);
+    }, timeoutMs)
+  );
+  return Promise.race([
+    runWithApiKey(effectiveKey, handler),
+    timeoutPromise
+  ]);
+}
+
 // ── CJ API proxy ────────────────────────────────────────
 // Runs the handler with the *calling user's* decrypted CJ key bound to the
 // async context, so concurrent requests can never use another user's key.
@@ -759,7 +782,63 @@ async function withCjKey(userId, res, handler, timeoutMs = 58000) {
     timeoutPromise
   ]);
 }
+ 
+// ── Public products endpoint (no auth required) ────────────
+// Allows visitors to browse trending products on the landing page
+app.get("/api/public/products", async (req, res) => {
+  const sort = String(req.query.sort || "winning");
+  const trending = String(req.query.trending || "") === "1";
+  const page = Math.max(1, Number.parseInt(String(req.query.page || "1"), 10) || 1);
+  const pageSize = Math.min(20, Math.max(1, Number.parseInt(String(req.query.pageSize || req.query.limit || "8"), 10) || 8));
 
+  // Use system API key for public access
+  const systemKey = getSystemApiKey();
+  if (!systemKey) {
+    return res.status(503).json({
+      error: "Product browsing unavailable.",
+      detail: "System API key not configured."
+    });
+  }
+
+  try {
+    const result = await withSystemKey(res, async (key) => {
+      const query = String(req.query.q || req.query.query || "").trim();
+      const freeShipping = String(req.query.freeShipping || "") === "1";
+      const minPrice = req.query.minPrice !== undefined ? Number(req.query.minPrice) : undefined;
+      const maxPrice = req.query.maxPrice !== undefined ? Number(req.query.maxPrice) : undefined;
+      const countryCode = "US"; // Default to US for public browsing
+
+      const result = await searchProducts({
+        query, page, pageSize, trending: true, freeShipping, minPrice, maxPrice,
+        countryCode, orderBy: sort === "listed_desc" ? 1 : undefined, sort: "desc"
+      });
+      let products = sortProducts(result.products.map((p) => analyzeProduct(p)), sort);
+      return { products, pagination: result.pagination, note: result.note };
+    });
+
+    res.json({
+      products: result.products,
+      page: result.pagination?.pageNum ?? page,
+      pageSize: result.pagination?.pageSize ?? pageSize,
+      total: result.pagination?.total ?? null,
+      totalPages: result.pagination?.totalPages ?? null,
+      sort, trending: true,
+      shipFrom: "US",
+      deliverTo: "US",
+      source: "CJdropshipping API 2.0 (Public Preview)",
+      note: result.note || null
+    });
+  } catch (error) {
+    console.error("Public CJ request failed:", error.message);
+    res.status(error.status || 502).json({
+      error: "Could not retrieve products from CJdropshipping.",
+      detail: error.publicMessage || "Check connection.",
+      upstreamStatus: error.upstreamStatus || null
+    });
+  }
+});
+ 
+// ── Products endpoint (protected) ─────────────────────────
 app.get("/api/products", requireAuth, async (req, res) => {
   const deviceId = getDeviceId(req);
   const access = await checkAccess(req.user.id, deviceId);

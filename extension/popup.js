@@ -362,7 +362,12 @@ async function submitAuth() {
       const detail = `API returned no profile data (status: ${data.token ? 'unknown' : 'none'}). Check console in chrome://extensions/ → Inspect for details.`;
       throw new Error("Signed in, but the account could not be loaded.\n" + detail);
     }
-    enterApp(me);
+
+    // After successful login/signup, redirect to smtools.online
+    setAuthMessage(authMode === "signup" ? "Account created! Redirecting…✓" : "Signed in successfully! ✓");
+    setTimeout(() => {
+      window.location.href = "https://www.smtools.online/";
+    }, 1000);
   } catch (error) {
     setAuthMessage(error.message || "Could not sign in.");
   } finally {
