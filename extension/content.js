@@ -219,13 +219,38 @@ function injectPanel() {
   function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" })[c]); }
 
   async function apiFetch(path, opts = {}) {
-    const res = await fetch(PH_API + path, {
-      method: opts.method || "GET",
-      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      ...(opts.body ? { body: JSON.stringify(opts.body) } : {})
-    });
-    if (res.status === 401) { token = ""; setAuthToken(""); showAuthUI(); throw new Error("Session expired — please sign in again"); }
-    return res.json().catch(() => null);
+    const url = PH_API + path;
+    const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    console.log(`[CJ-PH][api] ${opts.method || 'GET'} ${url}`, token ? `token=${token.substring(0,20)}...` : 'no token');
+    let res;
+    try {
+      res = await fetch(url, { method: opts.method || "GET", headers, ...(opts.body ? { body: JSON.stringify(opts.body) } : {}) });
+    } catch (err) {
+      console.error("[CJ-PH][api] network error:", err?.message || err);
+      throw new Error(`Network error — check your internet connection.`);
+    }
+    console.log(`[CJ-PH][api] status: ${res.status} ${res.statusText}`);
+    const ct = res.headers.get("content-type") || "";
+    let data;
+    try {
+      data = ct.includes("json") ? await res.json() : await res.text();
+    } catch {
+      data = await res.text().catch(() => "");
+    }
+    console.log(`[CJ-PH][api] body:`, typeof data === "object" ? JSON.stringify(data).substring(0, 200) : data);
+
+    if (res.status === 401) {
+      token = "";
+      setAuthToken("");
+      throw new Error("Session expired — please sign in again.");
+    }
+    if (!res.ok) {
+      const errMsg = (typeof data === "object" && data?.error) || data || `HTTP ${res.status}`;
+      console.warn("[CJ-PH][api] non-ok response:", res.status, errMsg);
+      throw new Error(String(errMsg));
+    }
+    return typeof data === "object" ? data : {};
   }
 
   function setStatus(msg, tone) {
@@ -265,53 +290,84 @@ function injectPanel() {
     if (authBtn) authBtn.addEventListener("click", async () => {
       const email = emailIn.value.trim();
       const pwd = passIn.value;
-      if (!email || !pwd) { alert("Please fill in all fields."); return; }
+      console.log("[CJ-PH][auth] submit:", authMode, "email:", email ? email.substring(0, 6) + "..." : "(empty)", "pwd length:", pwd.length);
+      if (!email || !pwd) {
+        msgEl.textContent = "Please fill in all fields.";
+        msgEl.style.color = "#dc2626";
+        return;
+      }
+      if (authMode === "signup" && pwd.length < 8) {
+        msgEl.textContent = "Password must be at least 8 characters.";
+        msgEl.style.color = "#dc2626";
+        return;
+      }
       msgEl.textContent = "";
       msgEl.style.color = "#888";
       authBtn.disabled = true;
       authBtn.textContent = "Loading…";
       try {
         const path  = authMode === "signup" ? "/api/auth/signup" : "/api/auth/login";
-        const data  = await apiFetch(path, { method: "POST", body: { email, password: pwd } });
-        if (!data) {
-          throw new Error("No response from server");
-        }
+        const body  = authMode === "signup"
+          ? { email, password: pwd }
+          : { email, password: pwd };
+        console.log("[CJ-PH][auth] calling", PH_API + path);
+        const data  = await apiFetch(path, { method: "POST", body });
+        console.log("[CJ-PH][auth] response:", data);
+
         // ── Success path ────────────────────────────────────────
         if (authMode === "signup") {
-          // Signup may or may not return a token (depends on email confirmation setting)
           if (data.token) {
             // Auto-logged in (no email confirmation required)
             token = data.token;
             setAuthToken(token);
-            if (saveChk && saveChk.checked) {
-              try { localStorage.setItem("cjphSavedPwd", JSON.stringify({ email, pwd })); } catch {}
+            console.log("[CJ-PH][auth] signup OK — saved token, verifying profile...");
+            try {
+              const me = await apiFetch("/api/auth/me");
+              console.log("[CJ-PH][auth] /me response:", me);
+              if (me && me.email) {
+                showAppUI();
+              } else {
+                throw new Error("Account created but profile could not be loaded.");
+              }
+            } catch (e) {
+              throw new Error(e.message || "Signup succeeded but could not load account. Try signing in instead.");
             }
-            showAppUI();
           } else {
-            // Email confirmation required — tell user to check inbox
+            // Email confirmation required
             msgEl.textContent = "✅ Account created! Check your email and click the confirmation link, then sign in.";
             msgEl.style.color = "#16a34a";
             authBtn.disabled = false;
             authBtn.textContent = "Sign In";
+            return;
           }
         } else {
-          // Login always returns a token on success
-          if (data.token) {
-            token = data.token;
-            setAuthToken(token);
-            if (saveChk && saveChk.checked) {
-              try { localStorage.setItem("cjphSavedPwd", JSON.stringify({ email, pwd })); } catch {}
+          // Login — must have token
+          if (!data.token) {
+            throw new Error(data.error || "Invalid credentials.");
+          }
+          token = data.token;
+          setAuthToken(token);
+          console.log("[CJ-PH][auth] login OK — saved token, verifying profile...");
+          try {
+            const me = await apiFetch("/api/auth/me");
+            console.log("[CJ-PH][auth] /me response:", me);
+            if (me && me.email) {
+              showAppUI();
+            } else {
+              throw new Error("Signed in but could not load account profile.");
             }
-            showAppUI();
-          } else {
-            throw new Error(data.error || "Invalid credentials");
+          } catch (e) {
+            throw new Error(e.message || "Login succeeded but profile could not be loaded.");
           }
         }
       } catch (err) {
         const msg = err.message || "Authentication failed";
-        msgEl.textContent = authMode === "signup"
-          ? (msg.includes("already") ? "This email is already registered. Please sign in instead." : msg)
-          : msg;
+        console.error("[CJ-PH][auth] error:", msg);
+        if (msg.includes("already registered") || msg.toLowerCase().includes("already")) {
+          msgEl.textContent = "This email is already registered. Please sign in instead.";
+        } else {
+          msgEl.textContent = msg;
+        }
         msgEl.style.color = "#dc2626";
         authBtn.disabled = false;
         authBtn.textContent = authMode === "signup" ? "Create Account" : "Sign In";
