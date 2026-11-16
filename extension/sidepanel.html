@@ -65,7 +65,7 @@
     .auth-msg {
       font-size: 12px;
       color: var(--danger);
-      margin-bottom: 12px;
+      margin-bottom: 10px;
       min-height: 16px;
       text-align: center;
     }
@@ -80,6 +80,13 @@
       outline: none;
     }
     .auth-input:focus { border-color: var(--primary); }
+    .extra-fields {
+      width: 100%;
+      /* HIDDEN by default — only shown on Sign Up */
+      display: none;
+      margin-bottom: 8px;
+    }
+    .extra-fields.show { display: block; }
     .auth-btn {
       width: 100%;
       padding: 11px;
@@ -143,14 +150,8 @@
       flex-shrink: 0;
     }
     .header-title-wrap { flex: 1; }
-    .header-title {
-      font-size: 15px;
-      font-weight: 600;
-    }
-    .header-subtitle {
-      font-size: 11px;
-      color: var(--muted);
-    }
+    .header-title { font-size: 15px; font-weight: 600; }
+    .header-subtitle { font-size: 11px; color: var(--muted); }
     .header-actions { display: flex; gap: 6px; }
     .hdr-btn {
       width: 30px;
@@ -185,7 +186,6 @@
       border-radius: 10px;
       font-size: 13px;
       outline: none;
-      transition: border-color 0.2s;
     }
     .search-input:focus { border-color: var(--primary); }
     .search-icon {
@@ -207,7 +207,6 @@
       cursor: pointer;
       font-size: 13px;
     }
-    .search-btn:hover { opacity: 0.9; }
 
     /* Tabs */
     .tabs {
@@ -228,14 +227,9 @@
     .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
     .tab:hover:not(.active) { color: var(--text); }
 
-    /* Content Area */
-    .content {
-      flex: 1;
-      overflow-y: auto;
-      padding: 12px;
-    }
+    /* Content */
+    .content { flex: 1; overflow-y: auto; padding: 12px; }
 
-    /* Product Cards */
     .product-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -253,77 +247,26 @@
       box-shadow: 0 3px 10px rgba(0,0,0,0.1);
       transform: translateY(-1px);
     }
-    .product-img {
-      width: 100%;
-      aspect-ratio: 1;
-      object-fit: cover;
-      background: var(--bg);
-    }
+    .product-img { width: 100%; aspect-ratio: 1; object-fit: cover; background: var(--bg); }
     .product-info { padding: 8px; }
     .product-name {
-      font-size: 11px;
-      font-weight: 500;
-      line-height: 1.3;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-      margin-bottom: 5px;
-      height: 29px;
+      font-size: 11px; font-weight: 500; line-height: 1.3;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      overflow: hidden; margin-bottom: 5px; height: 29px;
     }
-    .product-price {
-      font-size: 13px;
-      font-weight: 700;
-      color: var(--primary);
-    }
-    .product-meta {
-      font-size: 9px;
-      color: var(--muted);
-      margin-top: 3px;
-      display: flex;
-      justify-content: space-between;
-    }
-    .product-sold {
-      background: #f0f0f0;
-      padding: 1px 5px;
-      border-radius: 3px;
-    }
+    .product-price { font-size: 13px; font-weight: 700; color: var(--primary); }
+    .product-meta { font-size: 9px; color: var(--muted); margin-top: 3px; display: flex; justify-content: space-between; }
+    .product-sold { background: #f0f0f0; padding: 1px 5px; border-radius: 3px; }
 
-    /* Loading & Status */
-    .loading {
-      text-align: center;
-      padding: 40px;
-      color: var(--muted);
-      font-size: 13px;
-    }
+    .loading { text-align: center; padding: 40px; color: var(--muted); font-size: 13px; }
     .status-bar {
-      background: var(--white);
-      padding: 7px 16px;
-      font-size: 10px;
-      color: var(--muted);
-      border-top: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-shrink: 0;
+      background: var(--white); padding: 7px 16px; font-size: 10px; color: var(--muted);
+      border-top: 1px solid var(--border); display: flex; justify-content: space-between;
+      align-items: center; flex-shrink: 0;
     }
-    .status-dot {
-      display: inline-block;
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: #34c759;
-      margin-right: 5px;
-    }
-    .status-dot.offline { background: #ff3b30; }
-    .empty-state {
-      text-align: center;
-      padding: 40px 16px;
-      color: var(--muted);
-      font-size: 12px;
-    }
+    .status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #34c759; margin-right: 5px; }
+    .empty-state { text-align: center; padding: 40px 16px; color: var(--muted); font-size: 12px; }
     .empty-icon { font-size: 36px; margin-bottom: 10px; }
-
     ::-webkit-scrollbar { width: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
@@ -331,7 +274,7 @@
 </head>
 <body>
 
-  <!-- Auth Overlay -->
+  <!-- ═══════════ AUTH OVERLAY ═══════════ -->
   <div id="authOverlay" class="auth-overlay">
     <div class="auth-logo">PH</div>
     <h2 class="auth-title">CJ Product Hunter</h2>
@@ -341,24 +284,24 @@
     <input type="email" id="authEmail" class="auth-input" placeholder="Email address" autocomplete="email">
     <input type="password" id="authPassword" class="auth-input" placeholder="Password" autocomplete="current-password">
 
-    <!-- Signup-only extra fields -->
-    <div id="nameWrap" class="hidden" style="width:100%">
-      <input type="text" id="authName" class="auth-input" placeholder="Full name (optional)" autocomplete="name" style="margin-bottom:6px">
+    <!-- Extra fields for SIGN UP only — hidden on Sign In -->
+    <div class="extra-fields" id="extraFields">
+      <input type="text" id="authName" class="auth-input" placeholder="Full name (optional)" autocomplete="name">
     </div>
 
     <button id="authBtn" class="auth-btn" type="button">Sign In</button>
 
+    <!-- Toggle link — uses data-mode attribute to avoid innerHTML replacement bug -->
     <p class="auth-switch">
-      <span id="switchLabel">Don't have an account?</span>
+      <span id="switchLabel">Don't have an account? </span>
       <button id="toggleAuth" type="button">Sign Up</button>
     </p>
 
-    <p class="auth-hint" id="authHint">Setup: go to <strong>My CJ → API</strong> in cjdropshipping.com and generate an API key.</p>
+    <p class="auth-hint">Setup: go to <strong>My CJ → API</strong> in cjdropshipping.com and generate an API key.</p>
   </div>
 
-  <!-- Main App -->
+  <!-- ═══════════ MAIN APP ═══════════ -->
   <div id="app">
-    <!-- Header -->
     <div class="header">
       <div class="logo">PH</div>
       <div class="header-title-wrap">
@@ -366,12 +309,11 @@
         <div class="header-subtitle" id="userEmail">—</div>
       </div>
       <div class="header-actions">
-        <button class="hdr-btn" id="themeBtn" title="Toggle dark/light">🌙</button>
-        <button class="hdr-btn" id="closePanel" title="Close panel">×</button>
+        <button class="hdr-btn" id="themeBtn" title="Toggle theme">🌙</button>
+        <button class="hdr-btn" id="closePanel" title="Close">×</button>
       </div>
     </div>
 
-    <!-- Search -->
     <div class="search-bar">
       <div class="search-input-wrap">
         <span class="search-icon">🔍</span>
@@ -380,14 +322,12 @@
       </div>
     </div>
 
-    <!-- Tabs -->
     <div class="tabs">
       <div class="tab active" data-tab="products">📦 Products</div>
       <div class="tab" data-tab="trending">🔥 Trending</div>
       <div class="tab" data-tab="suppliers">🏭 Suppliers</div>
     </div>
 
-    <!-- Content -->
     <div class="content" id="content">
       <div class="empty-state">
         <div class="empty-icon">🔍</div>
@@ -395,7 +335,6 @@
       </div>
     </div>
 
-    <!-- Status Bar -->
     <div class="status-bar">
       <span><span class="status-dot" id="statusDot"></span><span id="statusText">Ready</span></span>
       <span id="resultCount">—</span>
@@ -403,236 +342,223 @@
   </div>
 
 <script>
-/* ── Config ──────────────────────────────────────────────────── */
+/* ── Config ─────────────────────────────────────────────────────── */
 const API_BASE = "https://cj-winning-product-hunter-poc.vercel.app";
-const TOKEN_KEY  = "cj_ph_token";          // sidepanel uses its own key
-const THEME_KEY  = "cjphTheme";
+const TOKEN_KEY  = "cj_ph_token";
 let token     = localStorage.getItem(TOKEN_KEY) || "";
-let authMode  = "signin";                   // "signin" | "signup"
-let currentTab = "products";
+let authMode  = "signin";   // "signin" | "signup"
 
-/* ── DOM helpers ─────────────────────────────────────────────── */
-const $ = (id) => document.getElementById(id);
-const q   = (sel) => document.querySelector(sel);
-const qs  = (sel) => document.querySelectorAll(sel);
+/* ── DOM refs ───────────────────────────────────────────────────── */
+const el = id => document.getElementById(id);
 
-/* ── Auth UI helpers ─────────────────────────────────────────── */
-function getEl(id) { return $(id); }
-
-function showAuthMsg(msg, ok) {
-  const el = $("authMsg");
-  el.textContent = msg || "";
-  el.className = "auth-msg" + (ok ? " ok" : "");
+/* ── Auth helpers ───────────────────────────────────────────────── */
+function showMsg(msg, ok) {
+  const m = el("authMsg");
+  m.textContent = msg || "";
+  m.className = "auth-msg" + (ok ? " ok" : "");
 }
 
-function updateSwitchLabel() {
-  if (authMode === "signin") {
-    $("switchLabel").textContent = "Don't have an account? ";
-    $("authBtn").textContent   = "Sign In";
-  } else {
-    $("switchLabel").textContent = "Already have an account? ";
-    $("authBtn").textContent   = "Create Account";
-  }
-}
-
-function setAuthMode(mode) {
+function applyMode(mode) {
   authMode = mode;
-  updateSwitchLabel();
-  showAuthMsg("");
+  if (mode === "signup") {
+    el("authBtn").textContent  = "Create Account";
+    el("toggleAuth").textContent = "Sign In";
+    el("switchLabel").textContent = "Already have an account? ";
+    el("extraFields").classList.add("show");
+  } else {
+    el("authBtn").textContent  = "Sign In";
+    el("toggleAuth").textContent = "Sign Up";
+    el("switchLabel").textContent = "Don't have an account? ";
+    el("extraFields").classList.remove("show");
+  }
+  showMsg("");
 }
 
 function showAppUI(user) {
-  $("authOverlay").classList.add("hidden");
-  const app = $("app");
+  el("authOverlay").classList.add("hidden");
+  const app = el("app");
   app.style.display = "flex";
-  if (user && user.email) {
-    $("userEmail").textContent = user.full_name || user.email;
-  }
+  if (user && user.email) el("userEmail").textContent = user.full_name || user.email;
 }
 
 function showAuthUI() {
-  $("authOverlay").classList.remove("hidden");
-  $("app").style.display = "none";
-  showAuthMsg("");
+  el("authOverlay").classList.remove("hidden");
+  el("app").style.display = "none";
+  applyMode(authMode);       // keep current mode label correct
 }
 
-/* ── Token / session ─────────────────────────────────────────── */
+/* ── API ────────────────────────────────────────────────────────── */
 async function apiFetch(path, opts = {}) {
   const headers = { "Content-Type": "application/json", ...opts.headers };
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  const res = await fetch(API_BASE + path, { method: opts.method || "GET", headers, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  const res = await fetch(API_BASE + path, {
+    method: opts.method || "GET",
+    headers,
+    body: opts.body ? JSON.stringify(opts.body) : undefined
+  });
   if (res.status === 401) {
-    token = ""; localStorage.removeItem(TOKEN_KEY); showAuthUI(); throw new Error("Session expired — please sign in again.");
+    token = ""; localStorage.removeItem(TOKEN_KEY); showAuthUI();
+    throw new Error("Session expired — please sign in.");
   }
   return res.json().catch(() => null);
 }
 
-/* ── Submit Auth (Sign In / Sign Up) ────────────────────────── */
+/* ── Submit auth (sign-in / sign-up) ───────────────────────────── */
 async function submitAuth() {
-  const email   = ($("authEmail").value || "").trim();
-  const password = $("authPassword").value || "";
-  showAuthMsg(authMode === "signup" ? "Creating your account…" : "Signing in…");
-  $("authBtn").disabled = true;
+  const email    = (el("authEmail").value  || "").trim();
+  const password =  el("authPassword").value || "";
+  const fullname = (el("authName")?.value  || "").trim();
+
+  if (!email || !password)  { showMsg("Please enter your email and password.", false); return; }
+  if (authMode === "signup" && password.length < 8) { showMsg("Password must be at least 8 characters.", false); return; }
+
+  el("authBtn").disabled = true;
+  showMsg(authMode === "signup" ? "Creating your account…" : "Signing in…", false);
 
   try {
-    if (!email || !password) { showAuthMsg("Please enter your email and password."); $("authBtn").disabled = false; return; }
-    if (authMode === "signup" && password.length < 8) { showAuthMsg("Password must be at least 8 characters.", false); $("authBtn").disabled = false; return; }
-
     const path  = authMode === "signup" ? "/api/auth/signup" : "/api/auth/login";
-    const data  = await apiFetch(path, { method: "POST", body: { email, password } });
+    const data  = await apiFetch(path, { method: "POST", body: { email, password, ...(authMode==="signup"&&fullname?{fullName:fullname}:{}) } });
 
     console.log("[CJ-PH][side] auth response:", data);
 
-    if (!data) { showAuthMsg("Network error — check your connection.", false); $("authBtn").disabled = false; return; }
+    if (!data)                                   { showMsg("Network error — check connection.", false); el("authBtn").disabled=false; return; }
 
     if (authMode === "signup") {
       if (data.token) {
-        // Auto-login on signup
-        token = data.token;
+        // Auto-login after signup
+        token     = data.token;
         localStorage.setItem(TOKEN_KEY, token);
-        const me = await apiFetch("/api/auth/me");
-        if (me && me.email) { showAppUI(me); }
-        else { showAuthMsg("Account created but profile load failed.", false); $("authBtn").disabled = false; }
+        const me  = await apiFetch("/api/auth/me");
+        if (me && me.email)  { showAppUI(me); }
+        else                   { showMsg("Account created but profile load failed.", false); el("authBtn").disabled=false; }
       } else {
-        // Email confirmation required
-        showAuthMsg("✅ Account created! Check your email and click the confirmation link, then sign in.", true);
-        setAuthMode("signin");          // ← reset so Sign In button works
-        $("authBtn").disabled = false;
+        // Email confirmation required — switch back to sign-in mode so button actually works
+        showMsg("✅ Account created! Check your email, click the link, then sign in.", true);
+        applyMode("signin");          // ← reset so Sign In button really signs in next time
+        el("authBtn").disabled = false;
       }
     } else {
-      // Login
-      if (!data.token) { showAuthMsg(data.error || "Invalid email or password.", false); $("authBtn").disabled = false; return; }
-      token = data.token;
+      // Login path
+      if (!data.token)  { showMsg(data.error || "Invalid email or password.", false); el("authBtn").disabled=false; return; }
+      token     = data.token;
       localStorage.setItem(TOKEN_KEY, token);
-      const me = await apiFetch("/api/auth/me");
+      const me  = await apiFetch("/api/auth/me");
       if (me && me.email) { showAppUI(me); }
-      else { showAuthMsg("Signed in but profile could not be loaded.", false); $("authBtn").disabled = false; }
+      else                  { showMsg("Signed in but profile could not be loaded.", false); el("authBtn").disabled=false; }
     }
   } catch (err) {
     console.error("[CJ-PH][side] auth error:", err);
-    showAuthMsg(err.message || "Authentication failed.", false);
-    $("authBtn").disabled = false;
+    showMsg(err.message || "Authentication failed.", false);
+    el("authBtn").disabled = false;
   }
 }
 
-/* ── Document-level event delegation (survives DOM replacements) ─*/
+/* ═══════════════════════════════════════════════════════════════════
+   DOCUMENT-LEVEL EVENT DELEGATION
+   Survives CJ React SPA DOM mutations — handlers never break.
+   ═══════════════════════════════════════════════════════════════════ */
 document.addEventListener("click", (evt) => {
   const t = evt.target;
 
-  /* Sign In / Create Account */
+  // ── Sign In / Create Account button ──────────────────────────
   if (t.id === "authBtn" || t.closest("#authBtn")) {
     evt.preventDefault(); evt.stopPropagation();
     submitAuth();
     return;
   }
 
-  /* Toggle signin ↔ signup */
+  // ── Toggle Sign In ↔ Sign Up ─────────────────────────────────
   if (t.id === "toggleAuth" || t.closest("#toggleAuth")) {
     evt.preventDefault(); evt.stopPropagation();
-    setAuthMode(authMode === "signin" ? "signup" : "signin");
+    applyMode(authMode === "signin" ? "signup" : "signin");
     return;
   }
 
-  /* Close panel */
-  if (t.id === "closePanel" || t.closest("#closePanel")) {
-    window.close();
-    return;
-  }
+  // ── Close panel ──────────────────────────────────────────────
+  if (t.id === "closePanel" || t.closest("#closePanel")) { window.close(); return; }
 
-  /* Theme toggle */
+  // ── Theme toggle ─────────────────────────────────────────────
   if (t.id === "themeBtn" || t.closest("#themeBtn")) {
     const root = document.documentElement;
     const isDark = root.getAttribute("data-theme") === "dark";
-    if (isDark) { root.removeAttribute("data-theme"); try { localStorage.setItem(THEME_KEY, "light"); } catch {} q("#themeBtn").textContent = "🌙"; }
-    else         { root.setAttribute("data-theme", "dark"); try { localStorage.setItem(THEME_KEY, "dark"); } catch {} q("#themeBtn").textContent = "☀️"; }
+    if (isDark) { root.removeAttribute("data-theme"); try{localStorage.setItem("cjphTheme","light");}catch{} el("themeBtn").textContent="🌙"; }
+    else        { root.setAttribute("data-theme","dark");  try{localStorage.setItem("cjphTheme","dark");}catch{} el("themeBtn").textContent="☀️"; }
     return;
   }
 
-  /* Tab switches */
+  // ── Tab switches ─────────────────────────────────────────────
   if (t.classList.contains("tab")) {
-    qs(".tab").forEach(tab => tab.classList.remove("active"));
+    document.querySelectorAll(".tab").forEach(tb => tb.classList.remove("active"));
     t.classList.add("active");
-    currentTab = t.dataset.tab;
-    if (currentTab === "products") loadProducts();
-    else if (currentTab === "trending") loadTrending();
-    else content.innerHTML = '<div class="empty-state"><div class="empty-icon">🏭</div><p>Suppliers coming soon</p></div>';
+    if (t.dataset.tab === "products")  loadProducts();
+    else if (t.dataset.tab === "trending") loadTrending();
+    else el("content").innerHTML='<div class="empty-state"><div class="empty-icon">🏭</div><p>Suppliers coming soon</p></div>';
     return;
   }
 
-  /* Product card click → open in main window */
+  // ── Product card → open in main browser tab ──────────────────
   const card = t.closest(".product-card");
-  if (card) {
-    const pid = card.dataset.id;
-    chrome.runtime.sendMessage({ action: "openProduct", productId: pid }).catch(() => {});
-    return;
-  }
+  if (card) { chrome.runtime.sendMessage({action:"openProduct",productId:card.dataset.id}).catch(()=>{}); return; }
 });
 
 /* Enter key in auth form submits */
 document.addEventListener("keydown", (evt) => {
-  if (evt.key === "Enter" && !$("authOverlay").classList.contains("hidden")) {
-    submitAuth();
-  }
+  if (evt.key==="Enter" && !el("authOverlay").classList.contains("hidden")) submitAuth();
 });
 
-/* ── Load Products ───────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════
+   PRODUCT LOADING
+   ═══════════════════════════════════════════════════════════════════ */
+function esc(s) { return String(s||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[c]); }
+
 function renderCard(p) {
   return `<div class="product-card" data-id="${p.id}">
-    <img class="product-img" src="${p.image || ''}" alt="" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23f0f0f0%22 width=%22100%22 height=%22100%22/><text x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23aaa%22 font-size=%2210%22>No img</text></svg>'">
+    <img class="product-img" src="${p.image||''}" alt="" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23f0f0f0%22 width=%22100%22 height=%22100%22/><text x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23aaa%22 font-size=%2210%22>No img</text></svg>'">
     <div class="product-info">
-      <div class="product-name">${esc(p.name || "Untitled")}</div>
-      <div class="product-price">$${Number(p.cjCost || 0).toFixed(2)}</div>
+      <div class="product-name">${esc(p.name||"Untitled")}</div>
+      <div class="product-price">$${Number(p.cjCost||0).toFixed(2)}</div>
       <div class="product-meta"><span class="product-sold">${(p.totalSales||0).toLocaleString()} sold</span><span>⭐ ${p.score||0}/100</span></div>
     </div></div>`;
 }
-function esc(s) { return String(s||"").replace(/[&<>"']/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[c]); }
 
 async function loadProducts(qry) {
-  setContent('<div class="loading">Searching…</div>');
+  el("content").innerHTML='<div class="loading">Searching…</div>';
   try {
-    const query = qry !== undefined ? qry : (q("#query")?.value || "").trim();
-    const url = `/api/public/products?page=1&pageSize=10&q=${encodeURIComponent(query)}&sort=winning`;
-    const data = await apiFetch(url);
+    const q2 = qry!==undefined?qry:(el("query")?.value||"").trim();
+    const data = await apiFetch(`/api/public/products?page=1&pageSize=10&q=${encodeURIComponent(q2)}&sort=winning`);
     const list = data?.products || [];
-    $("resultCount").textContent = `${list.length} results`;
-    if (!list.length) { setContent(`<div class="empty-state"><div class="empty-icon">🔍</div><p>No products found for "${esc(query)}"</p></div>`); return; }
-    setContent(`<div class="product-grid">${list.map(renderCard).join("")}</div>`);
-  } catch (err) {
-    setContent(`<div class="empty-state"><div class="empty-icon">⚠️</div><p>${esc(err.message)}</p></div>`);
-  }
+    el("resultCount").textContent=`${list.length} results`;
+    if (!list.length) { el("content").innerHTML=`<div class="empty-state"><div class="empty-icon">🔍</div><p>No products found</p></div>`; return; }
+    el("content").innerHTML=`<div class="product-grid">${list.map(renderCard).join("")}</div>`;
+  } catch(e) { el("content").innerHTML=`<div class="empty-state"><div class="empty-icon">⚠️</div><p>${esc(e.message)}</p></div>`; }
 }
 
-async function loadTrending(country) {
-  setContent('<div class="loading">Loading trending…</div>');
+async function loadTrending() {
+  el("content").innerHTML='<div class="loading">Loading trending…</div>';
   try {
-    const url = `/api/public/products?trending=true&page=1&pageSize=10${country ? "&country="+encodeURIComponent(country) : ""}`;
-    const data = await apiFetch(url);
+    const data = await apiFetch("/api/public/products?trending=true&page=1&pageSize=10");
     const list = data?.products || [];
-    $("resultCount").textContent = `🔥 ${list.length} trending`;
-    if (!list.length) { setContent(`<div class="empty-state"><div class="empty-icon">🔥</div><p>No trending products found</p></div>`); return; }
-    setContent(`<div class="product-grid">${list.map(renderCard).join("")}</div>`);
-  } catch (err) {
-    setContent(`<div class="empty-state"><div class="empty-icon">⚠️</div><p>${esc(err.message)}</p></div>`);
-  }
+    el("resultCount").textContent=`🔥 ${list.length} trending`;
+    if (!list.length) { el("content").innerHTML=`<div class="empty-state"><div class="empty-icon">🔥</div><p>No trending products</p></div>`; return; }
+    el("content").innerHTML=`<div class="product-grid">${list.map(renderCard).join("")}</div>`;
+  } catch(e) { el("content").innerHTML=`<div class="empty-state"><div class="empty-icon">⚠️</div><p>${esc(e.message)}</p></div>`; }
 }
 
-function setContent(html) { $("content").innerHTML = html; }
+el("searchBtn").addEventListener("click", () => loadProducts());
+el("query").addEventListener("keypress", e => { if (e.key==="Enter") loadProducts(); });
 
-/* Search button & Enter key */
-q("#searchBtn").addEventListener("click", () => loadProducts());
-q("#query").addEventListener("keypress", (e) => { if (e.key==="Enter") loadProducts(); });
-
-/* ── Init ────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════
+   INIT
+   ═══════════════════════════════════════════════════════════════════ */
 (function init() {
-  // Restore theme
-  const storedTheme = localStorage.getItem(THEME_KEY);
-  if (storedTheme === "dark") document.documentElement.setAttribute("data-theme", "dark");
-  q("#themeBtn").textContent = storedTheme === "dark" ? "☀️" : "🌙";
+  const storedTheme = localStorage.getItem("cjphTheme");
+  if (storedTheme==="dark") document.documentElement.setAttribute("data-theme","dark");
+  el("themeBtn").textContent = storedTheme==="dark"?"☀️":"🌙";
 
   if (!token) { showAuthUI(); return; }
-  apiFetch("/api/auth/me").then((me) => {
-    if (me && me.email) { showAppUI(me); }
-    else { showAuthUI(); }
+  apiFetch("/api/auth/me").then(me => {
+    if (me && me.email) showAppUI(me);
+    else                 showAuthUI();
   }).catch(() => showAuthUI());
 })();
 </script>
