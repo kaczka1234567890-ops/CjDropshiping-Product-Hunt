@@ -63,11 +63,28 @@ chrome.webRequest.onBeforeRequest.addListener(
 // ── Side panel setup ──────────────────────────────────────────────
 chrome.runtime.onInstalled.addListener(async () => {
   try {
-    // Open side panel on CJdropshipping pages when icon is clicked
+    // Open side panel on CJdropshipping pages when icon is clicked,
+    // and keep it open on those pages (behavior: "openpanelonactionclick")
     await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
     console.log("Side panel enabled for CJdropshipping pages");
   } catch (error) {
     console.warn("Side panel setup error:", error);
+  }
+});
+
+// ── Keep side panel open on CJdropshipping pages ──────────────────
+// Listen for tab updates - when user navigates to CJ page, open side panel
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete' && /cjdropshipping\.com/.test(tab.url)) {
+    try {
+      // Open side panel and keep it open
+      await chrome.sidePanel.open({ tabId: tabId });
+      // Set behavior to keep panel open on this page
+      await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+      console.log("[BG] Side panel opened for CJ page:", tab.url);
+    } catch (error) {
+      console.warn("[BG] Failed to open side panel:", error);
+    }
   }
 });
 
