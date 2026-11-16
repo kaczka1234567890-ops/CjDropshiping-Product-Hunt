@@ -1227,7 +1227,7 @@ app.get("/api/suppliers/best-sellers", requireAuth, async (req, res) => {
       detail: error.publicMessage || error.message
     });
   }
-}
+});
 
 // ── Admin: User List ────────────────────────────────────────
 app.get("/admin/users", requireAuth, async (req, res) => {
