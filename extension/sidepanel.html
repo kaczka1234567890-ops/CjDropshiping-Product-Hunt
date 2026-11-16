@@ -8,6 +8,7 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
       --primary: #ff7700;
+      --primary-hover: #ef6d00;
       --bg: #f5f5f7;
       --white: #ffffff;
       --text: #1d1d1f;
@@ -15,6 +16,13 @@
       --border: #e5e5ea;
       --danger: #dc2626;
       --success: #16a34a;
+    }
+    body[data-theme="dark"] {
+      --bg: #0f1117;
+      --white: #1a1b26;
+      --text: #e2e4f0;
+      --muted: #8b8fa3;
+      --border: #2e3040;
     }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -24,6 +32,7 @@
       display: flex;
       flex-direction: column;
       overflow: hidden;
+      font-size: 13px;
     }
 
     /* ── Auth Overlay ── */
@@ -40,235 +49,280 @@
     }
     .auth-overlay.hidden { display: none; }
     .auth-logo {
-      width: 48px;
-      height: 48px;
-      background: var(--primary);
-      border-radius: 12px;
-      display: grid;
-      place-items: center;
-      color: white;
-      font-weight: 800;
-      font-size: 20px;
-      margin-bottom: 16px;
+      width: 48px; height: 48px; background: var(--primary);
+      border-radius: 12px; display: grid; place-items: center;
+      color: white; font-weight: 800; font-size: 20px; margin-bottom: 16px;
     }
-    .auth-title {
-      font-size: 18px;
-      font-weight: 700;
-      margin-bottom: 6px;
-    }
-    .auth-subtitle {
-      font-size: 12px;
-      color: var(--muted);
-      text-align: center;
-      margin-bottom: 20px;
-    }
-    .auth-msg {
-      font-size: 12px;
-      color: var(--danger);
-      margin-bottom: 10px;
-      min-height: 16px;
-      text-align: center;
-    }
+    .auth-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+    .auth-subtitle { font-size: 12px; color: var(--muted); text-align: center; margin-bottom: 20px; }
+    .auth-msg { font-size: 12px; color: var(--danger); margin-bottom: 10px; min-height: 16px; text-align: center; }
     .auth-msg.ok { color: var(--success); }
     .auth-input {
-      width: 100%;
-      padding: 11px 12px;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      font-size: 13px;
-      margin-bottom: 8px;
-      outline: none;
+      width: 100%; padding: 11px 12px; border: 1px solid var(--border);
+      border-radius: 10px; font-size: 13px; margin-bottom: 8px; outline: none;
+      background: var(--white); color: var(--text);
     }
     .auth-input:focus { border-color: var(--primary); }
-    .extra-fields {
-      width: 100%;
-      display: none;
-      margin-bottom: 8px;
-    }
+    .extra-fields { width: 100%; display: none; margin-bottom: 8px; }
     .extra-fields.show { display: block; }
     .auth-btn {
-      width: 100%;
-      padding: 11px;
-      background: var(--primary);
-      color: white;
-      border: none;
-      border-radius: 10px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      margin-top: 4px;
+      width: 100%; padding: 11px; background: var(--primary); color: white;
+      border: none; border-radius: 10px; font-size: 14px; font-weight: 600;
+      cursor: pointer; margin-top: 4px;
     }
     .auth-btn:hover { opacity: 0.9; }
     .auth-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .auth-switch {
-      margin-top: 14px;
-      font-size: 12px;
-      color: var(--muted);
-      text-align: center;
-    }
+    .auth-switch { margin-top: 14px; font-size: 12px; color: var(--muted); text-align: center; }
     .auth-switch button {
-      background: none;
-      border: none;
-      color: var(--primary);
-      cursor: pointer;
-      font-weight: 600;
-      font-size: 12px;
-      padding: 0;
+      background: none; border: none; color: var(--primary); cursor: pointer;
+      font-weight: 600; font-size: 12px; padding: 0;
     }
-    .auth-hint {
-      margin-top: 14px;
-      font-size: 10px;
-      color: var(--muted);
-      text-align: center;
-      line-height: 1.5;
-    }
+    .auth-hint { margin-top: 14px; font-size: 10px; color: var(--muted); text-align: center; line-height: 1.5; }
 
-    /* ── Main App ── */
+    /* ── MAIN APP ── */
     #app { display: none; flex-direction: column; height: 100%; }
 
-    /* Header */
-    .header {
+    /* ═══ TOP MENU BAR ═══ */
+    .toolbar {
       background: var(--white);
       border-bottom: 1px solid var(--border);
-      padding: 12px 16px;
+      padding: 8px 12px;
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 6px;
       flex-shrink: 0;
     }
-    .logo {
-      width: 32px;
-      height: 32px;
-      background: var(--primary);
-      border-radius: 8px;
-      display: grid;
-      place-items: center;
-      color: white;
-      font-weight: 800;
-      font-size: 14px;
-      flex-shrink: 0;
+    .logo-sm {
+      width: 28px; height: 28px; background: var(--primary);
+      border-radius: 7px; display: grid; place-items: center;
+      color: white; font-weight: 800; font-size: 12px; flex-shrink: 0;
     }
-    .header-title-wrap { flex: 1; }
-    .header-title { font-size: 15px; font-weight: 600; }
-    .header-subtitle { font-size: 11px; color: var(--muted); }
-    .header-actions { display: flex; gap: 6px; }
-    .hdr-btn {
-      width: 30px;
-      height: 30px;
-      border: none;
-      background: var(--bg);
-      border-radius: 7px;
-      cursor: pointer;
-      font-size: 14px;
-      display: grid;
-      place-items: center;
-      color: var(--muted);
+    .toolbar-title { font-size: 13px; font-weight: 700; margin-right: auto; white-space: nowrap; }
+    .toolbar-email {
+      font-size: 11px; color: var(--muted); max-width: 100px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    .hdr-btn:hover { background: var(--border); }
+    .tool-btn {
+      width: 30px; height: 30px; border: 1px solid var(--border);
+      border-radius: 8px; background: var(--white); cursor: pointer;
+      font-size: 14px; display: grid; place-items: center; color: var(--muted);
+      transition: background 0.15s;
+    }
+    .tool-btn:hover { background: var(--bg); color: var(--text); }
+    .btn-primary { background: var(--primary) !important; color: white !important; border-color: var(--primary) !important; }
+    .btn-primary:hover { background: var(--primary-hover) !important; }
 
-    /* Search Bar */
-    .search-bar {
+    /* ═══ FILTERS PANEL ═══ */
+    .filters-panel {
       background: var(--white);
-      padding: 10px 16px;
       border-bottom: 1px solid var(--border);
+      padding: 10px 12px;
       flex-shrink: 0;
     }
-    .search-input-wrap {
-      position: relative;
+    .filters-toggle {
+      cursor: pointer; font-weight: 700; color: var(--text); font-size: 12px;
+      display: flex; align-items: center; gap: 6px; user-select: none;
+    }
+    .filters-toggle::before { content: "▼"; font-size: 9px; transition: transform 0.2s; }
+    .filters-toggle.collapsed::before { transform: rotate(-90deg); }
+    .filters-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px;
+      font-size: 12px;
+    }
+    .filter-row { display: flex; flex-direction: column; gap: 4px; }
+    .filter-row label { font-weight: 600; color: var(--muted); font-size: 11px; }
+    .filter-row input, .filter-row select {
+      padding: 7px 8px; border: 1px solid var(--border); border-radius: 7px;
+      font-size: 12px; width: 100%; outline: none; background: var(--white); color: var(--text);
+    }
+    .filter-checks { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; font-size: 12px; }
+    .filter-checks label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+    .filter-checks input[type="checkbox"] { accent-color: var(--primary); }
+
+    /* ═══ SEARCH ROW ═══ */
+    .search-row {
+      background: var(--white);
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
       display: flex;
       gap: 8px;
+      flex-shrink: 0;
     }
-    .search-input {
-      flex: 1;
-      padding: 9px 12px 9px 34px;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      font-size: 13px;
-      outline: none;
-    }
-    .search-input:focus { border-color: var(--primary); }
-    .search-icon {
-      position: absolute;
-      left: 11px;
-      top: 50%;
-      transform: translateY(-50%);
-      color: var(--muted);
-      font-size: 13px;
-      pointer-events: none;
-    }
-    .search-btn {
-      background: var(--primary);
-      color: white;
-      border: none;
-      padding: 9px 14px;
-      border-radius: 10px;
-      font-weight: 600;
-      cursor: pointer;
-      font-size: 13px;
-    }
+    .search-row input { flex: 1; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 13px; outline: none; background: var(--white); color: var(--text); }
+    .search-row button { background: var(--primary); color: white; border: none; padding: 9px 18px; border-radius: 10px; font-weight: 700; cursor: pointer; font-size: 13px; }
 
-    /* Tabs */
-    .tabs {
-      display: flex;
+    /* ═══ CATEGORY + MODE CHIPS ═══ */
+    .mode-bar {
       background: var(--white);
+      padding: 8px 12px;
       border-bottom: 1px solid var(--border);
-      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      flex-shrink: 0;
     }
-    .tab {
-      padding: 11px 14px;
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--muted);
-      cursor: pointer;
-      border-bottom: 2px solid transparent;
-      transition: all 0.2s;
+    .cat-select {
+      padding: 7px 10px; border: 1px solid var(--border); border-radius: 999px;
+      font-size: 12px; background: var(--white); color: var(--text); outline: none;
     }
-    .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
-    .tab:hover:not(.active) { color: var(--text); }
+    .chip {
+      padding: 5px 12px; border: 1px solid var(--border); border-radius: 999px;
+      font-size: 11px; font-weight: 600; cursor: pointer; background: var(--white);
+      color: var(--text); transition: all 0.15s;
+    }
+    .chip.active, .chip:hover { background: var(--primary); color: white; border-color: var(--primary); }
+    .chip-primary { background: var(--primary); color: white; border-color: var(--primary); }
 
-    /* Content */
-    .content { flex: 1; overflow-y: auto; padding: 12px; }
-
-    .product-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 10px;
-    }
-    .product-card {
+    /* ═══ BS BAR ═══ */
+    .bs-bar {
       background: var(--white);
-      border-radius: 10px;
-      overflow: hidden;
-      border: 1px solid var(--border);
-      cursor: pointer;
-      transition: box-shadow 0.2s, transform 0.2s;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      flex-shrink: 0;
     }
-    .product-card:hover {
-      box-shadow: 0 3px 10px rgba(0,0,0,0.1);
-      transform: translateY(-1px);
-    }
-    .product-img { width: 100%; aspect-ratio: 1; object-fit: cover; background: var(--bg); }
-    .product-info { padding: 8px; }
-    .product-name {
-      font-size: 11px; font-weight: 500; line-height: 1.3;
-      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-      overflow: hidden; margin-bottom: 5px; height: 29px;
-    }
-    .product-price { font-size: 13px; font-weight: 700; color: var(--primary); }
-    .product-meta { font-size: 9px; color: var(--muted); margin-top: 3px; display: flex; justify-content: space-between; }
-    .product-sold { background: #f0f0f0; padding: 1px 5px; border-radius: 3px; }
+    .bs-bar select { padding: 5px 8px; border: 1px solid var(--border); border-radius: 7px; font-size: 12px; background: var(--white); color: var(--text); outline: none; }
 
-    .loading { text-align: center; padding: 40px; color: var(--muted); font-size: 13px; }
+    /* ═══ STATUS BAR ═══ */
     .status-bar {
-      background: var(--white); padding: 7px 16px; font-size: 10px; color: var(--muted);
-      border-top: 1px solid var(--border); display: flex; justify-content: space-between;
-      align-items: center; flex-shrink: 0;
+      background: var(--white);
+      padding: 6px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
     }
-    .status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #34c759; margin-right: 5px; }
-    .empty-state { text-align: center; padding: 40px 16px; color: var(--muted); font-size: 12px; }
-    .empty-icon { font-size: 36px; margin-bottom: 10px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .status-dot.ok { background: var(--success); }
+    .status-dot.err { background: var(--danger); }
+    .status-text { color: var(--muted); }
+    .result-count { margin-left: auto; color: var(--muted); font-size: 11px; }
+
+    /* ═══ RESULTS ═══ */
+    .results-area { flex: 1; overflow-y: auto; padding: 12px; }
+    .product-item {
+      display: flex; gap: 10px; padding: 10px; border: 1px solid var(--border);
+      border-radius: 11px; cursor: pointer; transition: box-shadow 0.15s, border-color 0.15s;
+      background: var(--white); margin-bottom: 8px;
+    }
+    .product-item:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); border-color: var(--primary); }
+    .prod-img { width: 64px; height: 64px; border-radius: 8px; object-fit: cover; background: var(--bg); flex-shrink: 0; }
+    .prod-info { flex: 1; min-width: 0; }
+    .prod-name { font-size: 12px; font-weight: 600; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .prod-price { font-size: 14px; font-weight: 700; color: var(--primary); margin-top: 4px; }
+    .prod-meta { font-size: 10px; color: var(--muted); margin-top: 4px; display: flex; gap: 8px; align-items: center; }
+    .score-badge { border-radius: 999px; padding: 1px 7px; font-weight: 700; font-size: 10px; }
+    .score-high { background: #e6f4f0; color: #007f60; }
+    .score-mid { background: #fdf3e3; color: #b07c1a; }
+    .score-low { background: #fdecea; color: #f24724; }
+    .prod-actions { display: flex; gap: 6px; margin-top: 8px; }
+    .prod-actions button { font-size: 10px; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); cursor: pointer; color: var(--text); }
+    .prod-actions .list-btn { background: var(--primary); color: white; border-color: var(--primary); font-weight: 600; }
+
+    /* ═══ PAGINATION ═══ */
+    .pag-bar {
+      background: var(--white);
+      padding: 8px 12px;
+      border-top: 1px solid var(--border);
+      display: none;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+    .pag-bar.show { display: flex; }
+    .pag-btn { padding: 5px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--white); cursor: pointer; font-size: 12px; color: var(--text); }
+    .pag-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .pag-info { color: var(--muted); }
+
+    /* ═══ ALWAYS-ON CTA ═══ */
+    .always-on-bar {
+      background: var(--white);
+      padding: 10px 12px;
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .always-on-btn {
+      width: 100%; padding: 12px; border: none; border-radius: 10px;
+      background: var(--primary); color: white; font-weight: 700; font-size: 14px;
+      cursor: pointer;
+    }
+    .always-on-btn:hover { background: var(--primary-hover); }
+    .footer-note { font-size: 10px; color: var(--muted); text-align: center; margin-top: 6px; line-height: 1.5; }
+
+    /* ═══ FOOTER CONTACT ═══ */
+    .contact-footer {
+      background: var(--white);
+      padding: 8px 12px;
+      border-top: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--muted);
+      text-align: center;
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .contact-footer a { color: var(--success); text-decoration: none; font-weight: 600; }
+
+    /* ═══ MODAL ═══ */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100;
+      display: none; align-items: center; justify-content: center;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal {
+      background: var(--white); border-radius: 14px; width: 90%; max-width: 400px;
+      max-height: 85vh; overflow-y: auto; padding: 20px; position: relative;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    }
+    .modal-close {
+      position: absolute; top: 12px; right: 12px; width: 28px; height: 28px;
+      border: 1px solid var(--border); border-radius: 50%; background: var(--white);
+      cursor: pointer; font-size: 16px; color: var(--muted); display: grid; place-items: center;
+    }
+    .modal h3 { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+    .mrow { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
+    .mrow > span { font-size: 12px; color: var(--muted); min-width: 80px; }
+    .mrow input, .mrow select { flex: 1; padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; outline: none; background: var(--white); color: var(--text); }
+    .mrow input:focus { border-color: var(--primary); }
+    .pwd-group { display: flex; gap: 4px; align-items: center; flex: 1; }
+    .pwd-group input { flex: 1; }
+    .pwd-toggle { padding: 0 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--white); cursor: pointer; font-size: 13px; }
+    .btn-full { width: 100%; padding: 11px; border: none; border-radius: 10px; background: var(--primary); color: white; font-weight: 700; font-size: 14px; cursor: pointer; margin-top: 6px; }
+    .btn-full:hover { opacity: 0.9; }
+    .btn-full:disabled { opacity: 0.5; cursor: not-allowed; }
+    .set-status { font-size: 12px; margin-top: 10px; text-align: center; color: var(--muted); }
+
+    /* scroll */
     ::-webkit-scrollbar { width: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .loading { text-align: center; padding: 40px; color: var(--muted); }
+    .empty-state { text-align: center; padding: 40px 16px; color: var(--muted); font-size: 12px; }
+    .empty-icon { font-size: 36px; margin-bottom: 10px; }
+
+    /* dark mode tweaks */
+    [data-theme="dark"] .tool-btn, [data-theme="dark"] .modal { background: #1a1b26; }
+    [data-theme="dark"] .tool-btn { border-color: #2e3040; color: #e2e4f0; }
+    [data-theme="dark"] .tool-btn:hover { background: #2e3040; }
+    [data-theme="dark"] .auth-input, [data-theme="dark"] .search-row input,
+    [data-theme="dark"] .cat-select, [data-theme="dark"] .modal input,
+    [data-theme="dark"] .modal select { background: #1a1b26; color: #e2e4f0; border-color: #2e3040; }
+    [data-theme="dark"] .product-item { background: #1a1b26; border-color: #2e3040; }
+    [data-theme="dark"] .product-item:hover { border-color: var(--primary); }
+    [data-theme="dark"] .prod-actions button { background: #2e3040; color: #e2e4f0; border-color: #2e3040; }
+    [data-theme="dark"] .chip { background: #1a1b26; color: #e2e4f0; border-color: #2e3040; }
+    [data-theme="dark"] .pwd-toggle { background: #1a1b26; color: #e2e4f0; border-color: #2e3040; }
+    [data-theme="dark"] .bs-bar select { background: #1a1b26; color: #e2e4f0; border-color: #2e3040; }
+    [data-theme="dark"] .filter-row input, [data-theme="dark"] .filter-row select { background: #1a1b26; color: #e2e4f0; border-color: #2e3040; }
   </style>
 </head>
 <body>
@@ -279,64 +333,180 @@
     <h2 class="auth-title">CJ Product Hunter</h2>
     <p class="auth-subtitle">Sign in to hunt winning products</p>
     <p class="auth-msg" id="authMsg"></p>
-
     <input type="email" id="authEmail" class="auth-input" placeholder="Email address" autocomplete="email">
     <input type="password" id="authPassword" class="auth-input" placeholder="Password" autocomplete="current-password">
-
-    <!-- Extra fields for SIGN UP only — hidden on Sign In -->
     <div class="extra-fields" id="extraFields">
       <input type="text" id="authName" class="auth-input" placeholder="Full name (optional)" autocomplete="name">
     </div>
-
     <button id="authBtn" class="auth-btn" type="button">Sign In</button>
-
-    <!-- Toggle link — no inline onclick; handled via addEventListener -->
     <p class="auth-switch">
       <span id="switchLabel">Don't have an account? </span>
       <button id="toggleAuth" type="button">Sign Up</button>
     </p>
-
     <p class="auth-hint">Setup: go to <strong>My CJ → API</strong> in cjdropshipping.com and generate an API key.</p>
   </div>
 
   <!-- ═══════════ MAIN APP ═══════════ -->
   <div id="app">
-    <div class="header">
-      <div class="logo">PH</div>
-      <div class="header-title-wrap">
-        <div class="header-title">CJ Product Hunter</div>
-        <div class="header-subtitle" id="userEmail">—</div>
+
+    <!-- ─── TOOLBAR (MENU BAR) ─── -->
+    <div class="toolbar">
+      <div class="logo-sm">PH</div>
+      <div style="flex:1;min-width:0">
+        <div class="toolbar-title">Product Hunter</div>
+        <div class="toolbar-email" id="userEmail">—</div>
       </div>
-      <div class="header-actions">
-        <button class="hdr-btn" id="themeBtn" title="Toggle theme">🌙</button>
-        <button class="hdr-btn" id="closePanel" title="Close">×</button>
+      <button class="tool-btn" id="profileBtn" title="Profile settings">👤</button>
+      <button class="tool-btn" id="helpBtn" title="Help">❓</button>
+      <button class="tool-btn" id="keyBtn" title="API Key settings">🔑</button>
+      <button class="tool-btn" id="logoutBtn" title="Logout">🚪</button>
+      <button class="tool-btn" id="themeBtn" title="Toggle theme">🌙</button>
+    </div>
+
+    <!-- ─── FILTERS PANEL ─── -->
+    <div class="filters-panel">
+      <div class="filters-toggle" id="filtersToggle">⚙ Filters — price, stock, shipping, country</div>
+      <div class="filters-grid" id="filtersBody" style="display:none">
+        <div class="filter-row"><label>Min price ($)</label><input type="number" id="f-min-price" min="0" step="0.01" placeholder="8"></div>
+        <div class="filter-row"><label>Max price ($)</label><input type="number" id="f-max-price" min="0" step="0.01" placeholder="60"></div>
+        <div class="filter-row"><label>Min stock</label><input type="number" id="f-min-stock" min="0" step="1" placeholder="100"></div>
+        <div class="filter-row"><label>Max stock</label><input type="number" id="f-max-stock" min="0" step="1" placeholder="5000"></div>
+        <div class="filter-row"><label>Deliver to</label>
+          <select id="f-deliver">
+            <option value="">All countries</option>
+            <option value="US">US</option><option value="GB">GB</option><option value="CA">CA</option>
+            <option value="AU">AU</option><option value="DE">DE</option><option value="FR">FR</option>
+            <option value="JP">JP</option><option value="KR">KR</option><option value="SG">SG</option>
+            <option value="IN">IN</option><option value="BR">BR</option><option value="MX">MX</option>
+            <option value="AE">AE</option><option value="ZA">ZA</option><option value="NL">NL</option>
+            <option value="IT">IT</option><option value="ES">ES</option><option value="SE">SE</option>
+            <option value="NO">NO</option>
+          </select>
+        </div>
+        <div class="filter-row"><label>Ship From</label>
+          <select id="f-ship-from">
+            <option value="">Any warehouse</option>
+            <option value="CN">China (CN)</option><option value="US">USA (US)</option>
+            <option value="EU">Europe (EU)</option><option value="UK">United Kingdom (UK)</option>
+            <option value="AU">Australia (AU)</option><option value="CA">Canada (CA)</option>
+          </select>
+        </div>
+      </div>
+      <div class="filter-checks">
+        <label><input type="checkbox" id="f-free"> Free shipping</label>
+        <label><input type="checkbox" id="f-quick"> 🚀 Quick delivery</label>
+        <label><input type="checkbox" id="f-new-list"> 🆕 New listing (&lt;= 7 days)</label>
+        <label><input type="checkbox" id="f-new-prod"> 🎉 New product (&lt;= 30 days)</label>
+        <label><input type="checkbox" id="f-relisting"> 🔄 Re-listing (old → active)</label>
+        <label><input type="checkbox" id="f-never-list"> 🚫 Never listed (0 sellers)</label>
       </div>
     </div>
 
-    <div class="search-bar">
-      <div class="search-input-wrap">
-        <span class="search-icon">🔍</span>
-        <input type="text" id="query" class="search-input" placeholder="Search winning products…">
-        <button id="searchBtn" class="search-btn">Hunt</button>
-      </div>
+    <!-- ─── SEARCH ─── -->
+    <div class="search-row">
+      <input type="text" id="query" placeholder="e.g. winter jacket — or pick a category below" autocomplete="off">
+      <button id="huntBtn">Hunt</button>
     </div>
 
-    <div class="tabs">
-      <div class="tab active" data-tab="products">📦 Products</div>
-      <div class="tab" data-tab="trending">🔥 Trending</div>
-      <div class="tab" data-tab="suppliers">🏭 Suppliers</div>
+    <!-- ─── MODE BAR ─── -->
+    <div class="mode-bar">
+      <label style="font-size:12px;color:var(--muted);font-weight:600">📂 Category:</label>
+      <select id="catSelect" class="cat-select">
+        <option value="">— Select a category —</option>
+        <option value="1">👗 Women's Clothing</option><option value="2">🐾 Pet Supplies</option>
+        <option value="3">🛋️ Home, Garden & Furniture</option><option value="4">💄 Health, Beauty & Hair</option>
+        <option value="5">💍 Jewelry & Watches</option><option value="6">👔 Men's Clothing</option>
+        <option value="7">🎒 Bags & Shoes</option><option value="8">🧸 Toys, Kids & Babies</option>
+        <option value="9">⚽ Sports & Outdoors</option><option value="10">📱 Consumer Electronics</option>
+        <option value="11">🔧 Home Improvement</option><option value="12">🚗 Automobiles</option>
+        <option value="13">📞 Phones & Accessories</option><option value="14">💻 Computer & Office</option>
+      </select>
+      <button class="chip" id="catHuntBtn">🎯 Hunt by category</button>
+      <button class="chip" id="trendChip">🔥 Trending</button>
+      <button class="chip" id="bestsellChip">🛒 Best-Selling</button>
+      <button class="chip" id="supplierChip">🏆 Best Supplier</button>
+      <button class="chip" id="resetChip" style="display:none">↺ Reset</button>
     </div>
 
-    <div class="content" id="content">
-      <div class="empty-state">
-        <div class="empty-icon">🔍</div>
-        <p>Enter a keyword to find winning products</p>
-      </div>
+    <!-- ─── BS BAR (country + sort) ─── -->
+    <div class="bs-bar" id="bsBar" style="display:none">
+      <label style="font-size:12px;color:var(--muted)">🌍 Ship to:</label>
+      <select id="bsCountry">
+        <option value="">All countries</option>
+        <option value="US">US</option><option value="GB">GB</option><option value="CA">CA</option>
+        <option value="AU">AU</option><option value="DE">DE</option><option value="FR">FR</option>
+        <option value="JP">JP</option><option value="KR">KR</option><option value="SG">SG</option>
+        <option value="IN">IN</option><option value="BR">BR</option><option value="MX">MX</option>
+        <option value="AE">AE</option><option value="ZA">ZA</option><option value="NL">NL</option>
+        <option value="IT">IT</option><option value="ES">ES</option><option value="SE">SE</option>
+        <option value="NO">NO</option>
+      </select>
+      <label style="font-size:12px;color:var(--muted)">📊 Sort:</label>
+      <select id="bsSort">
+        <option value="90d">90-day sales</option>
+        <option value="30d">30-day sales</option>
+        <option value="7d">7-day sales</option>
+      </select>
     </div>
 
+    <!-- ─── STATUS ─── -->
     <div class="status-bar">
-      <span><span class="status-dot" id="statusDot"></span><span id="statusText">Ready</span></span>
-      <span id="resultCount">—</span>
+      <span class="status-dot ok" id="statusDot"></span>
+      <span class="status-text" id="statusText">Ready · Click Hunt or Trending to begin</span>
+      <span class="result-count" id="resultCount">—</span>
+    </div>
+
+    <!-- ─── RESULTS ─── -->
+    <div class="results-area" id="resultsArea">
+      <div class="empty-state"><div class="empty-icon">🔍</div><p>Enter a keyword or pick a category to find winning products</p></div>
+    </div>
+
+    <!-- ─── PAGINATION ─── -->
+    <div class="pag-bar" id="pagBar">
+      <button class="pag-btn" id="prevBtn">← Prev</button>
+      <span class="pag-info" id="pageInfo">Page 1</span>
+      <button class="pag-btn" id="nextBtn">Next →</button>
+    </div>
+
+    <!-- ─── ALWAYS ON ─── -->
+    <div class="always-on-bar">
+      <button class="always-on-btn" id="alwaysOnBtn">📌 Open as always-on window</button>
+      <p class="footer-note">Click a product to open on CJdropshipping · Your CJ API key is stored securely on our server.</p>
+    </div>
+
+    <!-- ─── FOOTER CONTACT ─── -->
+    <div class="contact-footer">
+      <span>Need help? WhatsApp: <a href="https://wa.me/8801309524519" target="_blank" rel="noopener">+880 130 952 4519</a></span>
+    </div>
+  </div>
+
+  <!-- ═══════════ PROFILE MODAL ═══════════ -->
+  <div class="modal-overlay" id="profileModal">
+    <div class="modal">
+      <button class="modal-close" id="profileClose">×</button>
+      <h3>👤 Profile Settings</h3>
+      <p style="font-size:11px;color:var(--muted);margin-bottom:14px">Update your name, username, phone and password. Leave fields blank to keep current.</p>
+      <div class="mrow"><span>Current email</span><strong id="profileEmail" style="font-size:12px">—</strong></div>
+      <div class="mrow"><span>Full name</span><input id="profileFullName" type="text" placeholder="Your full name"></div>
+      <div class="mrow"><span>Username</span><input id="profileUsername" type="text" placeholder="your_username (3-30 chars)"></div>
+      <div class="mrow"><span>Phone</span><input id="profilePhone" type="tel" placeholder="+880 1XXX-XXXXXX"></div>
+      <details style="margin-top:6px;font-size:12px">
+        <summary style="cursor:pointer;font-weight:600;color:var(--muted)">🔒 Change password</summary>
+        <div class="mrow" style="margin-top:8px"><span>Current pwd</span>
+          <div class="pwd-group">
+            <input id="profileCurPwd" type="password" placeholder="Current password">
+            <button class="pwd-toggle" data-target="profileCurPwd">👁</button>
+          </div>
+        </div>
+        <div class="mrow"><span>New pwd</span>
+          <div class="pwd-group">
+            <input id="profileNewPwd" type="password" placeholder="New password (min 8 chars)">
+            <button class="pwd-toggle" data-target="profileNewPwd">👁</button>
+          </div>
+        </div>
+      </details>
+      <button class="btn-full" id="profileSave">Save Changes</button>
+      <div class="set-status" id="profileStatus"></div>
     </div>
   </div>
 
