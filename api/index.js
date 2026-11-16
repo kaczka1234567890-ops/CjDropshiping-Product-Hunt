@@ -53,7 +53,11 @@ import { analyzeProduct, sortProducts, estimateProfit } from "./scoring.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
-dotenv.config({ path: path.join(projectRoot, ".env") });
+
+// Only load .env file locally; Vercel injects env vars automatically
+if (!process.env.VERCEL) {
+  dotenv.config({ path: path.join(projectRoot, ".env") });
+}
 
 // ── Supabase client (service role — server-side only) ────
 const SUPABASE_URL = process.env.SUPABASE_URL;

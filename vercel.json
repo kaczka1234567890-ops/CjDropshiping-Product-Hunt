@@ -6,9 +6,10 @@
     }
   },
   "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "/api/index.js"
-    }
+    { "src": "/api/(.*)", "dest": "/api/index.js" },
+    { "src": "/admin", "dest": "/public/admin.html" },
+    { "src": "/help", "dest": "/public/help.html" },
+    { "src": "/(.*\\.(?:css|js|png|jpg|svg|ico))", "dest": "/public/$1" },
+    { "src": "/(.*)", "dest": "/public/index.html" }
   ]
 }
