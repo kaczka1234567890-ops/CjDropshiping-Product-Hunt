@@ -92,6 +92,7 @@
   <div class="topbar-right">
     <span class="tag">🔥 Trending</span>
     <span class="badge-online" id="onlineBadge" title="Online now">● <span id="onlineCount">—</span></span>
+    <button class="btn-secondary" id="adminBtn" style="display:none" title="Open Admin Panel">⚡ Admin</button>
     <button class="btn-secondary" id="openAuthBtn">Sign In / Sign Up</button>
     <button class="btn-secondary" id="logoutBtn" style="display:none">Logout</button>
   </div>
@@ -298,10 +299,12 @@
         if (data.token) {
           token = data.token;
           localStorage.setItem(TOKEN_KEY, token);
-          setMsg("Account created! Redirecting…", "ok");
-          setTimeout(() => {
-            window.location.href = "https://www.smtools.online/";
-          }, 800);
+          setMsg("Account created! Welcome aboard.", "ok");
+          openAuthBtn.style.display = "none";
+          logoutBtn.style.display = "";
+          loadProducts();
+          loadOnlineCount();
+          setTimeout(closeModal, 1500);
         } else {
           setMsg("Account created. Check your email to confirm, then sign in.", "ok");
           setMode("signin");
@@ -310,9 +313,11 @@
         token = data.token;
         localStorage.setItem(TOKEN_KEY, token);
         setMsg("Signed in successfully!", "ok");
-        setTimeout(() => {
-          window.location.href = "https://www.smtools.online/";
-        }, 800);
+        openAuthBtn.style.display = "none";
+        logoutBtn.style.display = "";
+        loadProducts();
+        loadOnlineCount();
+        setTimeout(closeModal, 1500);
       }
     } catch (err) {
       setMsg(err.message || "Could not proceed.", "error");
@@ -341,6 +346,22 @@
     openAuthBtn.style.display = "none";
     logoutBtn.style.display = "";
     loadProducts();
+    loadOnlineCount();
+    // Check if admin
+    apiFetch("/auth/me").then(({ data }) => {
+      if (data && data.isAdmin) {
+        const adminBtn = document.getElementById("adminBtn");
+        if (adminBtn) adminBtn.style.display = "";
+      }
+    }).catch(() => {});
+  }
+
+  // Admin button click
+  const adminBtn = document.getElementById("adminBtn");
+  if (adminBtn) {
+    adminBtn.addEventListener("click", () => {
+      window.location.href = "/admin";
+    });
   }
 })();
 </script>
