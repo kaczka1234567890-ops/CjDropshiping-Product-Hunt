@@ -2152,6 +2152,21 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true, auth: "supabase", timestamp: new Date().toISOString() });
 });
 
+// Debug endpoint
+app.get("/api/debug", (_req, res) => {
+  res.json({
+    env: {
+      VERCEL: !!process.env.VERCEL,
+      hasSupabaseUrl: !!process.env.SUPABASE_URL,
+      hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      hasEncryptionKey: !!process.env.ENCRYPTION_KEY,
+    },
+    initError: initError || null,
+    supabaseConnected: !!supabase,
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Unknown API routes → JSON 404 (never fall through to the static SPA).
 app.use("/api", (req, res) => {
   res.status(404).json({ error: `Unknown endpoint: ${req.method} ${req.originalUrl}` });
