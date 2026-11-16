@@ -82,7 +82,6 @@
     .auth-input:focus { border-color: var(--primary); }
     .extra-fields {
       width: 100%;
-      /* HIDDEN by default — only shown on Sign Up */
       display: none;
       margin-bottom: 8px;
     }
@@ -289,12 +288,12 @@
       <input type="text" id="authName" class="auth-input" placeholder="Full name (optional)" autocomplete="name">
     </div>
 
-    <button id="authBtn" class="auth-btn" type="button">Sign In</button>
+    <button id="authBtn" class="auth-btn" type="button" onclick="CJPH.submitAuth()">Sign In</button>
 
-    <!-- Toggle link — uses data-mode attribute to avoid innerHTML replacement bug -->
+    <!-- Toggle link — direct onclick, no innerHTML replacement bug -->
     <p class="auth-switch">
       <span id="switchLabel">Don't have an account? </span>
-      <button id="toggleAuth" type="button">Sign Up</button>
+      <button id="toggleAuth" type="button" onclick="CJPH.toggleMode()">Sign Up</button>
     </p>
 
     <p class="auth-hint">Setup: go to <strong>My CJ → API</strong> in cjdropshipping.com and generate an API key.</p>
@@ -309,8 +308,8 @@
         <div class="header-subtitle" id="userEmail">—</div>
       </div>
       <div class="header-actions">
-        <button class="hdr-btn" id="themeBtn" title="Toggle theme">🌙</button>
-        <button class="hdr-btn" id="closePanel" title="Close">×</button>
+        <button class="hdr-btn" id="themeBtn" title="Toggle theme" onclick="CJPH.toggleTheme()">🌙</button>
+        <button class="hdr-btn" id="closePanel" title="Close" onclick="window.close()">×</button>
       </div>
     </div>
 
@@ -318,14 +317,14 @@
       <div class="search-input-wrap">
         <span class="search-icon">🔍</span>
         <input type="text" id="query" class="search-input" placeholder="Search winning products…">
-        <button id="searchBtn" class="search-btn">Hunt</button>
+        <button id="searchBtn" class="search-btn" onclick="CJPH.loadProducts()">Hunt</button>
       </div>
     </div>
 
     <div class="tabs">
-      <div class="tab active" data-tab="products">📦 Products</div>
-      <div class="tab" data-tab="trending">🔥 Trending</div>
-      <div class="tab" data-tab="suppliers">🏭 Suppliers</div>
+      <div class="tab active" data-tab="products" onclick="CJPH.switchTab('products')">📦 Products</div>
+      <div class="tab" data-tab="trending" onclick="CJPH.switchTab('trending')">🔥 Trending</div>
+      <div class="tab" data-tab="suppliers" onclick="CJPH.switchTab('suppliers')">🏭 Suppliers</div>
     </div>
 
     <div class="content" id="content">
@@ -354,8 +353,10 @@ const el = id => document.getElementById(id);
 /* ── Auth helpers ───────────────────────────────────────────────── */
 function showMsg(msg, ok) {
   const m = el("authMsg");
+  if (!m) { console.log("[CJ-PH][side] authMsg element missing"); return; }
   m.textContent = msg || "";
   m.className = "auth-msg" + (ok ? " ok" : "");
+  console.log("[CJ-PH][side] showMsg:", msg, ok ? "(ok)" : "(err)");
 }
 
 function applyMode(mode) {
@@ -379,23 +380,26 @@ function showAppUI(user) {
   const app = el("app");
   app.style.display = "flex";
   if (user && user.email) el("userEmail").textContent = user.full_name || user.email;
+  console.log("[CJ-PH][side] showAppUI:", user ? user.email : "none");
 }
 
 function showAuthUI() {
   el("authOverlay").classList.remove("hidden");
   el("app").style.display = "none";
-  applyMode(authMode);       // keep current mode label correct
+  applyMode(authMode);
 }
 
 /* ── API ────────────────────────────────────────────────────────── */
 async function apiFetch(path, opts = {}) {
   const headers = { "Content-Type": "application/json", ...opts.headers };
   if (token) headers["Authorization"] = `Bearer ${token}`;
+  console.log("[CJ-PH][side] apiFetch:", opts.method||"GET", path, token ? "tok=***" : "no tok");
   const res = await fetch(API_BASE + path, {
     method: opts.method || "GET",
     headers,
     body: opts.body ? JSON.stringify(opts.body) : undefined
   });
+  console.log("[CJ-PH][side] status:", res.status);
   if (res.status === 401) {
     token = ""; localStorage.removeItem(TOKEN_KEY); showAuthUI();
     throw new Error("Session expired — please sign in.");
@@ -404,153 +408,133 @@ async function apiFetch(path, opts = {}) {
 }
 
 /* ── Submit auth (sign-in / sign-up) ───────────────────────────── */
-async function submitAuth() {
-  const email    = (el("authEmail").value  || "").trim();
-  const password =  el("authPassword").value || "";
-  const fullname = (el("authName")?.value  || "").trim();
+window.CJPH = {
+  submitAuth: async function() {
+    console.log("[CJ-PH][side] submitAuth called, mode=", authMode);
+    const email    = (el("authEmail").value  || "").trim();
+    const password =  el("authPassword").value || "";
+    const fullname = (el("authName")?.value  || "").trim();
 
-  if (!email || !password)  { showMsg("Please enter your email and password.", false); return; }
-  if (authMode === "signup" && password.length < 8) { showMsg("Password must be at least 8 characters.", false); return; }
+    if (!email || !password)  { showMsg("Please enter your email and password.", false); return; }
+    if (authMode === "signup" && password.length < 8) { showMsg("Password must be at least 8 characters.", false); return; }
 
-  el("authBtn").disabled = true;
-  showMsg(authMode === "signup" ? "Creating your account…" : "Signing in…", false);
+    el("authBtn").disabled = true;
+    showMsg(authMode === "signup" ? "Creating your account…" : "Signing in…", false);
 
-  try {
-    const path  = authMode === "signup" ? "/api/auth/signup" : "/api/auth/login";
-    const data  = await apiFetch(path, { method: "POST", body: { email, password, ...(authMode==="signup"&&fullname?{fullName:fullname}:{}) } });
+    try {
+      const path  = authMode === "signup" ? "/api/auth/signup" : "/api/auth/login";
+      const data  = await apiFetch(path, { method: "POST", body: { email, password, ...(authMode==="signup"&&fullname?{fullName:fullname}:{}) } });
 
-    console.log("[CJ-PH][side] auth response:", data);
+      console.log("[CJ-PH][side] auth response:", data);
 
-    if (!data)                                   { showMsg("Network error — check connection.", false); el("authBtn").disabled=false; return; }
+      if (!data)                                   { showMsg("Network error — check connection.", false); el("authBtn").disabled=false; return; }
 
-    if (authMode === "signup") {
-      if (data.token) {
-        // Auto-login after signup
+      if (authMode === "signup") {
+        if (data.token) {
+          token     = data.token;
+          localStorage.setItem(TOKEN_KEY, token);
+          const me  = await apiFetch("/api/auth/me");
+          if (me && me.email)  { showAppUI(me); }
+          else                   { showMsg("Account created but profile load failed.", false); el("authBtn").disabled=false; }
+        } else {
+          showMsg("✅ Account created! Check your email, click the link, then sign in.", true);
+          applyMode("signin");
+          el("authBtn").disabled = false;
+        }
+      } else {
+        if (!data.token)  { showMsg(data.error || "Invalid email or password.", false); el("authBtn").disabled=false; return; }
         token     = data.token;
         localStorage.setItem(TOKEN_KEY, token);
         const me  = await apiFetch("/api/auth/me");
-        if (me && me.email)  { showAppUI(me); }
-        else                   { showMsg("Account created but profile load failed.", false); el("authBtn").disabled=false; }
-      } else {
-        // Email confirmation required — switch back to sign-in mode so button actually works
-        showMsg("✅ Account created! Check your email, click the link, then sign in.", true);
-        applyMode("signin");          // ← reset so Sign In button really signs in next time
-        el("authBtn").disabled = false;
+        if (me && me.email) { showAppUI(me); }
+        else                  { showMsg("Signed in but profile could not be loaded.", false); el("authBtn").disabled=false; }
       }
-    } else {
-      // Login path
-      if (!data.token)  { showMsg(data.error || "Invalid email or password.", false); el("authBtn").disabled=false; return; }
-      token     = data.token;
-      localStorage.setItem(TOKEN_KEY, token);
-      const me  = await apiFetch("/api/auth/me");
-      if (me && me.email) { showAppUI(me); }
-      else                  { showMsg("Signed in but profile could not be loaded.", false); el("authBtn").disabled=false; }
+    } catch (err) {
+      console.error("[CJ-PH][side] auth error:", err);
+      showMsg(err.message || "Authentication failed.", false);
+      el("authBtn").disabled = false;
     }
-  } catch (err) {
-    console.error("[CJ-PH][side] auth error:", err);
-    showMsg(err.message || "Authentication failed.", false);
-    el("authBtn").disabled = false;
-  }
-}
+  },
 
-/* ═══════════════════════════════════════════════════════════════════
-   DOCUMENT-LEVEL EVENT DELEGATION
-   Survives CJ React SPA DOM mutations — handlers never break.
-   ═══════════════════════════════════════════════════════════════════ */
-document.addEventListener("click", (evt) => {
-  const t = evt.target;
-
-  // ── Sign In / Create Account button ──────────────────────────
-  if (t.id === "authBtn" || t.closest("#authBtn")) {
-    evt.preventDefault(); evt.stopPropagation();
-    submitAuth();
-    return;
-  }
-
-  // ── Toggle Sign In ↔ Sign Up ─────────────────────────────────
-  if (t.id === "toggleAuth" || t.closest("#toggleAuth")) {
-    evt.preventDefault(); evt.stopPropagation();
+  toggleMode: function() {
+    console.log("[CJ-PH][side] toggleMode from", authMode, "to", authMode==="signin"?"signup":"signin");
     applyMode(authMode === "signin" ? "signup" : "signin");
-    return;
-  }
+  },
 
-  // ── Close panel ──────────────────────────────────────────────
-  if (t.id === "closePanel" || t.closest("#closePanel")) { window.close(); return; }
-
-  // ── Theme toggle ─────────────────────────────────────────────
-  if (t.id === "themeBtn" || t.closest("#themeBtn")) {
+  toggleTheme: function() {
     const root = document.documentElement;
     const isDark = root.getAttribute("data-theme") === "dark";
     if (isDark) { root.removeAttribute("data-theme"); try{localStorage.setItem("cjphTheme","light");}catch{} el("themeBtn").textContent="🌙"; }
     else        { root.setAttribute("data-theme","dark");  try{localStorage.setItem("cjphTheme","dark");}catch{} el("themeBtn").textContent="☀️"; }
-    return;
-  }
+  },
 
-  // ── Tab switches ─────────────────────────────────────────────
-  if (t.classList.contains("tab")) {
+  loadProducts: function() {
+    el("content").innerHTML='<div class="loading">Searching…</div>';
+    try {
+      const q2 = (el("query")?.value||"").trim();
+      CJPH._loadProducts(q2);
+    } catch(e) { el("content").innerHTML=`<div class="empty-state"><div class="empty-icon">⚠️</div><p>${e.message}</p></div>`; }
+  },
+
+  _loadProducts: async function(qry) {
+    try {
+      const data = await apiFetch(`/api/public/products?page=1&pageSize=10&q=${encodeURIComponent(qry)}&sort=winning`);
+      const list = data?.products || [];
+      el("resultCount").textContent=`${list.length} results`;
+      if (!list.length) { el("content").innerHTML=`<div class="empty-state"><div class="empty-icon">🔍</div><p>No products found</p></div>`; return; }
+      el("content").innerHTML=`<div class="product-grid">${list.map(CJPH.renderCard).join("")}</div>`;
+    } catch(e) { el("content").innerHTML=`<div class="empty-state"><div class="empty-icon">⚠️</div><p>${e.message}</p></div>`; }
+  },
+
+  switchTab: function(tabName) {
     document.querySelectorAll(".tab").forEach(tb => tb.classList.remove("active"));
-    t.classList.add("active");
-    if (t.dataset.tab === "products")  loadProducts();
-    else if (t.dataset.tab === "trending") loadTrending();
+    const t = document.querySelector(`[data-tab="${tabName}"]`);
+    if (t) t.classList.add("active");
+    if (tabName==="products") CJPH.loadProducts();
+    else if (tabName==="trending") CJPH._loadTrending();
     else el("content").innerHTML='<div class="empty-state"><div class="empty-icon">🏭</div><p>Suppliers coming soon</p></div>';
-    return;
-  }
+  },
 
-  // ── Product card → open in main browser tab ──────────────────
-  const card = t.closest(".product-card");
-  if (card) { chrome.runtime.sendMessage({action:"openProduct",productId:card.dataset.id}).catch(()=>{}); return; }
+  _loadTrending: async function() {
+    try {
+      const data = await apiFetch("/api/public/products?trending=true&page=1&pageSize=10");
+      const list = data?.products || [];
+      el("resultCount").textContent=`🔥 ${list.length} trending`;
+      if (!list.length) { el("content").innerHTML=`<div class="empty-state"><div class="empty-icon">🔥</div><p>No trending products</p></div>`; return; }
+      el("content").innerHTML=`<div class="product-grid">${list.map(CJPH.renderCard).join("")}</div>`;
+    } catch(e) { el("content").innerHTML=`<div class="empty-state"><div class="empty-icon">⚠️</div><p>${e.message}</p></div>`; }
+  },
+
+  renderCard: function(p) {
+    const esc = s => String(s||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[c]);
+    return `<div class="product-card" data-id="${p.id}">
+      <img class="product-img" src="${p.image||''}" alt="" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23f0f0f0%22 width=%22100%22 height=%22100%22/><text x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23aaa%22 font-size=%2210%22>No img</text></svg>'">
+      <div class="product-info">
+        <div class="product-name">${esc(p.name||"Untitled")}</div>
+        <div class="product-price">$${Number(p.cjCost||0).toFixed(2)}</div>
+        <div class="product-meta"><span class="product-sold">${(p.totalSales||0).toLocaleString()} sold</span><span>⭐ ${p.score||0}/100</span></div>
+      </div></div>`;
+  },
+};
+
+/* ── Document-level delegation (backup safety net) ──────────────── */
+document.addEventListener("click", (evt) => {
+  console.log("[CJ-PH][side] delegation click:", evt.target.id || evt.target.className || evt.target.tagName);
+  const t = evt.target;
+  if (t.id === "authBtn" || t.closest("#authBtn")) { evt.preventDefault(); CJPH.submitAuth(); return; }
+  if (t.id === "toggleAuth" || t.closest("#toggleAuth")) { evt.preventDefault(); CJPH.toggleMode(); return; }
+  if (t.id === "closePanel" || t.closest("#closePanel")) { window.close(); return; }
+  if (t.id === "themeBtn" || t.closest("#themeBtn")) { CJPH.toggleTheme(); return; }
 });
 
-/* Enter key in auth form submits */
 document.addEventListener("keydown", (evt) => {
-  if (evt.key==="Enter" && !el("authOverlay").classList.contains("hidden")) submitAuth();
+  if (evt.key==="Enter" && !el("authOverlay").classList.contains("hidden")) { CJPH.submitAuth(); }
+  if (evt.key==="Enter" && el("query")) { CJPH.loadProducts(); }
 });
 
-/* ═══════════════════════════════════════════════════════════════════
-   PRODUCT LOADING
-   ═══════════════════════════════════════════════════════════════════ */
-function esc(s) { return String(s||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[c]); }
-
-function renderCard(p) {
-  return `<div class="product-card" data-id="${p.id}">
-    <img class="product-img" src="${p.image||''}" alt="" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23f0f0f0%22 width=%22100%22 height=%22100%22/><text x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23aaa%22 font-size=%2210%22>No img</text></svg>'">
-    <div class="product-info">
-      <div class="product-name">${esc(p.name||"Untitled")}</div>
-      <div class="product-price">$${Number(p.cjCost||0).toFixed(2)}</div>
-      <div class="product-meta"><span class="product-sold">${(p.totalSales||0).toLocaleString()} sold</span><span>⭐ ${p.score||0}/100</span></div>
-    </div></div>`;
-}
-
-async function loadProducts(qry) {
-  el("content").innerHTML='<div class="loading">Searching…</div>';
-  try {
-    const q2 = qry!==undefined?qry:(el("query")?.value||"").trim();
-    const data = await apiFetch(`/api/public/products?page=1&pageSize=10&q=${encodeURIComponent(q2)}&sort=winning`);
-    const list = data?.products || [];
-    el("resultCount").textContent=`${list.length} results`;
-    if (!list.length) { el("content").innerHTML=`<div class="empty-state"><div class="empty-icon">🔍</div><p>No products found</p></div>`; return; }
-    el("content").innerHTML=`<div class="product-grid">${list.map(renderCard).join("")}</div>`;
-  } catch(e) { el("content").innerHTML=`<div class="empty-state"><div class="empty-icon">⚠️</div><p>${esc(e.message)}</p></div>`; }
-}
-
-async function loadTrending() {
-  el("content").innerHTML='<div class="loading">Loading trending…</div>';
-  try {
-    const data = await apiFetch("/api/public/products?trending=true&page=1&pageSize=10");
-    const list = data?.products || [];
-    el("resultCount").textContent=`🔥 ${list.length} trending`;
-    if (!list.length) { el("content").innerHTML=`<div class="empty-state"><div class="empty-icon">🔥</div><p>No trending products</p></div>`; return; }
-    el("content").innerHTML=`<div class="product-grid">${list.map(renderCard).join("")}</div>`;
-  } catch(e) { el("content").innerHTML=`<div class="empty-state"><div class="empty-icon">⚠️</div><p>${esc(e.message)}</p></div>`; }
-}
-
-el("searchBtn").addEventListener("click", () => loadProducts());
-el("query").addEventListener("keypress", e => { if (e.key==="Enter") loadProducts(); });
-
-/* ═══════════════════════════════════════════════════════════════════
-   INIT
-   ═══════════════════════════════════════════════════════════════════ */
+/* ── Init ───────────────────────────────────────────────────────── */
 (function init() {
+  console.log("[CJ-PH][side] init — token:", token ? "***" : "none");
   const storedTheme = localStorage.getItem("cjphTheme");
   if (storedTheme==="dark") document.documentElement.setAttribute("data-theme","dark");
   el("themeBtn").textContent = storedTheme==="dark"?"☀️":"🌙";
