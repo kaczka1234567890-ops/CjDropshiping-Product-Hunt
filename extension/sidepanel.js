@@ -1,12 +1,13 @@
 /* ── CJ Product Hunter Side Panel (CSP-compliant) ────────────────────────────────────────
-   This file contains all JavaScript for the side panel. 
+   This file contains all JavaScript for the side panel.
    - All functions are attached to window.CJPH
    - No inline scripts, no inline onclick handlers
    - All events handled via document-level delegation + direct wiring
    - Version 1.0.9
    - CSP compliant (no inline scripts, no unsafe-inline)
-   - Loaded via <script src="sidepanel.js"></script> in sidepanel.html
+   - Loaded via <script src="sidepanel.js" defer></script> in sidepanel.html
    ─────────────────────────────────────────────────────────────────────────────────────────── */
+
 const API_BASE = "https://cj-winning-product-hunter-poc.vercel.app";
 const TOKEN_KEY = "cj_ph_token";
 let token = localStorage.getItem(TOKEN_KEY) || "";
@@ -14,7 +15,9 @@ let authMode = "signin"; // "signin" | "signup"
 
 const el = id => document.getElementById(id);
 
-/* ── PUBLIC API (window.CJPH) ────────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════════
+   PUBLIC API — available to any caller
+   ═══════════════════════════════════════════════════════════════════ */
 window.CJPH = {
 
   /* ── Submit auth (sign-in / sign-up) ──────────────────────────────────────────────── */
@@ -93,6 +96,7 @@ window.CJPH = {
           CJPH.showMsg("Signed in but profile could not be loaded.", false);
           el("authBtn").disabled = false;
         }
+      }
     } catch (err) {
       console.error("[CJ-PH][side] ✗ submitAuth threw:", err.message, err);
       CJPH.showMsg(err.message || "Authentication failed.", false);
@@ -145,7 +149,11 @@ window.CJPH = {
       throw new Error("Session expired — please sign in again.");
     }
     let data;
-    try { data = await res.json(); } catch { const txt = await res.text().catch(()=> ""); console.warn("[CJ-PH][side] non-JSON response:", txt.substring(0,100)); data = { error: txt || "Unexpected response from server" }; }
+    try { data = await res.json(); } catch {
+      const txt = await res.text().catch(()=> "");
+      console.warn("[CJ-PH][side] non-JSON response:", txt.substring(0,100));
+      data = { error: txt || "Unexpected response from server" };
+    }
     return data;
   },
 
@@ -169,8 +177,16 @@ window.CJPH = {
     else el("content").innerHTML='<div class="empty-state"><div class="empty-icon">🏭</div><p>Suppliers coming soon</p></div>';
   },
 
-  /* ── Internal helpers ────────────────────────────────────────────────────────── */
+  /* ── Show message ─────────────────────────────────────────────────────────── */
   showMsg: function(msg, ok) {
+    const m = el("authMsg");
+    if (!m) { console.log("[CJ-PH][side] ✗ authMsg element missing"); return; }
+    m.textContent = msg || "";
+    m.className = "auth-msg" + (ok ? " ok" : "");
+    console.log("[CJ-PH][side] showMsg:", msg || "(clear)", ok ? "✓" : "✗");
+  },
+
+  _loadProducts: async function(qry) {
     try {
       const data = await CJPH.apiFetch(`/api/public/products?page=1&pageSize=10&q=${encodeURIComponent(qry)}&sort=winning`);
       const list = data?.products || [];
@@ -220,7 +236,7 @@ document.addEventListener("click", (evt) => {
   // Auth button — submit auth
   if (t.id === "authBtn" || t.closest("#authBtn")) {
     console.log("[CJ-PH][side] ✓ authBtn clicked via delegation");
-    evt.preventDefault(); evt.stopPropagation();
+    evt.preventDefault();
     submitAuth();
     return;
   }
@@ -228,7 +244,7 @@ document.addEventListener("click", (evt) => {
   // Toggle sign in/up
   if (t.id === "toggleAuth" || t.closest("#toggleAuth")) {
     console.log("[CJ-PH][side] ✓ toggleAuth clicked via delegation");
-    evt.preventDefault(); evt.stopPropagation();
+    evt.preventDefault();
     CJPH.toggleMode();
     return;
   }
@@ -282,6 +298,7 @@ document.querySelectorAll(".tab").forEach(tab => {
   console.log("[CJ-PH][side] ★ wiring event listeners...");
   console.log("[CJ-PH][side]   authBtn found:", !!el("authBtn"));
   console.log("[CJ-PH][side]   toggleAuth found:", !!el("toggleAuth"));
+  console.log("[CJ-PH][side]   authMsg found:", !!el("authMsg"));
   console.log("[CJ-PH][side]   delegation set up above via addEventListener");
 
   if (!token) { showAuthUI(); console.log("[CJ-PH][side] ★ no token → showing auth UI"); return; }
