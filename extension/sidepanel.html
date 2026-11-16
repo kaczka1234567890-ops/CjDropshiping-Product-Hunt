@@ -116,27 +116,26 @@
     .filters-panel {
       background: var(--white);
       border-bottom: 1px solid var(--border);
-      padding: 10px 12px;
       flex-shrink: 0;
     }
-    .filters-toggle {
+    .filters-header {
       cursor: pointer; font-weight: 700; color: var(--text); font-size: 12px;
-      display: flex; align-items: center; gap: 6px; user-select: none;
+      display: flex; align-items: center; gap: 6px; padding: 9px 12px;
+      user-select: none; border-bottom: 1px solid var(--border);
     }
-    .filters-toggle::before { content: "▼"; font-size: 9px; transition: transform 0.2s; }
-    .filters-toggle.collapsed::before { transform: rotate(-90deg); }
-    .filters-grid {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px;
-      font-size: 12px;
-    }
+    .filters-header::after { content: "▾"; margin-left: auto; font-size: 10px; transition: transform 0.2s; color: var(--muted); }
+    .filters-header.collapsed::after { transform: rotate(-90deg); }
+    .filters-body { padding: 8px 12px; }
+    .filters-grid { display: none; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+    .filters-grid.show { display: grid; }
     .filter-row { display: flex; flex-direction: column; gap: 4px; }
     .filter-row label { font-weight: 600; color: var(--muted); font-size: 11px; }
     .filter-row input, .filter-row select {
       padding: 7px 8px; border: 1px solid var(--border); border-radius: 7px;
       font-size: 12px; width: 100%; outline: none; background: var(--white); color: var(--text);
     }
-    .filter-checks { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; font-size: 12px; }
-    .filter-checks label { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+    .filter-checks { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; }
+    .filter-checks label { display: flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
     .filter-checks input[type="checkbox"] { accent-color: var(--primary); }
 
     /* ═══ SEARCH ROW ═══ */
@@ -164,17 +163,16 @@
     }
     .cat-select {
       padding: 7px 10px; border: 1px solid var(--border); border-radius: 999px;
-      font-size: 12px; background: var(--white); color: var(--text); outline: none;
+      font-size: 12px; background: var(--white); color: var(--text); outline: none; min-width: 160px;
     }
     .chip {
-      padding: 5px 12px; border: 1px solid var(--border); border-radius: 999px;
-      font-size: 11px; font-weight: 600; cursor: pointer; background: var(--white);
-      color: var(--text); transition: all 0.15s;
+      padding: 7px 14px; border: 1px solid var(--border); border-radius: 999px;
+      font-size: 12px; font-weight: 600; cursor: pointer; background: var(--white);
+      color: var(--text); transition: all 0.15s; white-space: nowrap;
     }
-    .chip.pill { padding: 7px 14px; border-radius: 999px; font-size: 12px; border-width: 1px; }
-    .chip.pill.active { background: var(--primary); color: white; border-color: var(--primary); }
-    .chip.pill:hover { background: var(--primary); color: white; border-color: var(--primary); }
-    .mode-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .chip.active { background: var(--primary); color: white; border-color: var(--primary); }
+    .chip:hover:not(.active) { background: var(--bg); color: var(--text); }
+    .mode-label { font-size: 12px; color: var(--muted); font-weight: 600; }
 
     /* ═══ BS BAR ═══ */
     .bs-bar {
@@ -365,42 +363,44 @@
       <button class="tool-btn" id="themeBtn" title="Toggle theme">🌙</button>
     </div>
 
-    <!-- ─── FILTERS PANEL ─── -->
+    <!-- ─── FILTERS PANEL (expanded by default, compact grid) ─── -->
     <div class="filters-panel">
-      <div class="filters-toggle" id="filtersToggle">⚙ Filters — price, stock, shipping, country</div>
-      <div class="filters-grid" id="filtersBody" style="display:none">
-        <div class="filter-row"><label>Min price ($)</label><input type="number" id="f-min-price" min="0" step="0.01" placeholder="8"></div>
-        <div class="filter-row"><label>Max price ($)</label><input type="number" id="f-max-price" min="0" step="0.01" placeholder="60"></div>
-        <div class="filter-row"><label>Min stock</label><input type="number" id="f-min-stock" min="0" step="1" placeholder="100"></div>
-        <div class="filter-row"><label>Max stock</label><input type="number" id="f-max-stock" min="0" step="1" placeholder="5000"></div>
-        <div class="filter-row"><label>Deliver to</label>
-          <select id="f-deliver">
-            <option value="">All countries</option>
-            <option value="US">US</option><option value="GB">GB</option><option value="CA">CA</option>
-            <option value="AU">AU</option><option value="DE">DE</option><option value="FR">FR</option>
-            <option value="JP">JP</option><option value="KR">KR</option><option value="SG">SG</option>
-            <option value="IN">IN</option><option value="BR">BR</option><option value="MX">MX</option>
-            <option value="AE">AE</option><option value="ZA">ZA</option><option value="NL">NL</option>
-            <option value="IT">IT</option><option value="ES">ES</option><option value="SE">SE</option>
-            <option value="NO">NO</option>
-          </select>
+      <div class="filters-header" id="filtersHeader">⚙ Filters — price, stock, shipping, country</div>
+      <div class="filters-body">
+        <div class="filters-grid">
+          <div class="filter-row"><label>Min price ($)</label><input type="number" id="f-min-price" min="0" step="0.01" placeholder="8"></div>
+          <div class="filter-row"><label>Max price ($)</label><input type="number" id="f-max-price" min="0" step="0.01" placeholder="60"></div>
+          <div class="filter-row"><label>Min stock</label><input type="number" id="f-min-stock" min="0" step="1" placeholder="100"></div>
+          <div class="filter-row"><label>Max stock</label><input type="number" id="f-max-stock" min="0" step="1" placeholder="5000"></div>
+          <div class="filter-row"><label>Deliver to</label>
+            <select id="f-deliver">
+              <option value="">All countries</option>
+              <option value="US">US</option><option value="GB">GB</option><option value="CA">CA</option>
+              <option value="AU">AU</option><option value="DE">DE</option><option value="FR">FR</option>
+              <option value="JP">JP</option><option value="KR">KR</option><option value="SG">SG</option>
+              <option value="IN">IN</option><option value="BR">BR</option><option value="MX">MX</option>
+              <option value="AE">AE</option><option value="ZA">ZA</option><option value="NL">NL</option>
+              <option value="IT">IT</option><option value="ES">ES</option><option value="SE">SE</option>
+              <option value="NO">NO</option>
+            </select>
+          </div>
+          <div class="filter-row"><label>Ship From</label>
+            <select id="f-ship-from">
+              <option value="">Any warehouse</option>
+              <option value="CN">China (CN)</option><option value="US">USA (US)</option>
+              <option value="EU">Europe (EU)</option><option value="UK">UK</option>
+              <option value="AU">Australia (AU)</option><option value="CA">Canada (CA)</option>
+            </select>
+          </div>
         </div>
-        <div class="filter-row"><label>Ship From</label>
-          <select id="f-ship-from">
-            <option value="">Any warehouse</option>
-            <option value="CN">China (CN)</option><option value="US">USA (US)</option>
-            <option value="EU">Europe (EU)</option><option value="UK">United Kingdom (UK)</option>
-            <option value="AU">Australia (AU)</option><option value="CA">Canada (CA)</option>
-          </select>
+        <div class="filter-checks">
+          <label><input type="checkbox" id="f-free"> Free shipping</label>
+          <label><input type="checkbox" id="f-quick"> 🚀 Quick delivery</label>
+          <label><input type="checkbox" id="f-new-list"> 🆕 New listing (&lt;= 7 days)</label>
+          <label><input type="checkbox" id="f-new-prod"> 🎉 New product (&lt;= 30 days)</label>
+          <label><input type="checkbox" id="f-relisting"> 🔄 Re-listing (old → active)</label>
+          <label><input type="checkbox" id="f-never-list"> 🚫 Never listed (0 sellers)</label>
         </div>
-      </div>
-      <div class="filter-checks">
-        <label><input type="checkbox" id="f-free"> Free shipping</label>
-        <label><input type="checkbox" id="f-quick"> 🚀 Quick delivery</label>
-        <label><input type="checkbox" id="f-new-list"> 🆕 New listing (&lt;= 7 days)</label>
-        <label><input type="checkbox" id="f-new-prod"> 🎉 New product (&lt;= 30 days)</label>
-        <label><input type="checkbox" id="f-relisting"> 🔄 Re-listing (old → active)</label>
-        <label><input type="checkbox" id="f-never-list"> 🚫 Never listed (0 sellers)</label>
       </div>
     </div>
 
@@ -410,26 +410,24 @@
       <button id="huntBtn">Hunt</button>
     </div>
 
-    <!-- ─── MODE BAR (rounded pill buttons) ─── -->
+    <!-- ─── MODE BAR (compact pill row) ─── -->
     <div class="mode-bar">
-      <div class="mode-group">
-        <label style="font-size:12px;color:var(--muted);font-weight:600;margin-right:8px">📂 Category:</label>
-        <select id="catSelect" class="cat-select">
-          <option value="">— Select a category —</option>
-          <option value="1">👗 Women's Clothing</option><option value="2">🐾 Pet Supplies</option>
-          <option value="3">🛋️ Home, Garden & Furniture</option><option value="4">💄 Health, Beauty & Hair</option>
-          <option value="5">💍 Jewelry & Watches</option><option value="6">👔 Men's Clothing</option>
-          <option value="7">🎒 Bags & Shoes</option><option value="8">🧸 Toys, Kids & Babies</option>
-          <option value="9">⚽ Sports & Outdoors</option><option value="10">📱 Consumer Electronics</option>
-          <option value="11">🔧 Home Improvement</option><option value="12">🚗 Automobiles</option>
-          <option value="13">📞 Phones & Accessories</option><option value="14">💻 Computer & Office</option>
-        </select>
-        <button class="chip pill" id="catHuntBtn">🎯 Hunt by category</button>
-        <button class="chip pill" id="trendChip">🔥 Trending</button>
-        <button class="chip pill active" id="bestsellChip">🛒 Best-Selling</button>
-        <button class="chip pill" id="supplierChip">🏆 Best Supplier</button>
-        <button class="chip pill" id="resetChip" style="display:none">↺ Reset</button>
-      </div>
+      <span class="mode-label">📂 Category:</span>
+      <select id="catSelect" class="cat-select">
+        <option value="">— Select a category —</option>
+        <option value="1">👗 Women's Clothing</option><option value="2">🐾 Pet Supplies</option>
+        <option value="3">🛋️ Home, Garden & Furniture</option><option value="4">💄 Health, Beauty & Hair</option>
+        <option value="5">💍 Jewelry & Watches</option><option value="6">👔 Men's Clothing</option>
+        <option value="7">🎒 Bags & Shoes</option><option value="8">🧸 Toys, Kids & Babies</option>
+        <option value="9">⚽ Sports & Outdoors</option><option value="10">📱 Consumer Electronics</option>
+        <option value="11">🔧 Home Improvement</option><option value="12">🚗 Automobiles</option>
+        <option value="13">📞 Phones & Accessories</option><option value="14">💻 Computer & Office</option>
+      </select>
+      <button class="chip" id="catHuntBtn">🎯 Hunt by category</button>
+      <button class="chip" id="trendChip">🔥 Trending</button>
+      <button class="chip active" id="bestsellChip">🛒 Best-Selling</button>
+      <button class="chip" id="supplierChip">🏆 Best Supplier</button>
+      <button class="chip" id="resetChip" style="display:none">↺ Reset</button>
     </div>
 
     <!-- ─── BS BAR (country + sort) ─── -->
