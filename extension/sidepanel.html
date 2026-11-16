@@ -3,360 +3,646 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CJ Product Hunter</title>
-  <link rel="stylesheet" href="sidepanel.css">
+  <title>CJ Product Hunter — Side Panel</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --primary: #ff7700;
+      --bg: #f5f5f7;
+      --white: #ffffff;
+      --text: #1d1d1f;
+      --muted: #6e6e73;
+      --border: #e5e5ea;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    
+    /* Header */
+    .header {
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .logo {
+      width: 32px;
+      height: 32px;
+      background: var(--primary);
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      color: white;
+      font-weight: 800;
+      font-size: 14px;
+    }
+    .header-title {
+      flex: 1;
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .header-subtitle {
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .close-btn {
+      width: 28px;
+      height: 28px;
+      border: none;
+      background: var(--bg);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+    }
+    .close-btn:hover { background: var(--border); }
+    
+    /* Search Bar */
+    .search-bar {
+      background: var(--white);
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .search-input-wrap {
+      position: relative;
+      display: flex;
+      gap: 8px;
+    }
+    .search-input {
+      flex: 1;
+      padding: 10px 12px 10px 36px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .search-input:focus { border-color: var(--primary); }
+    .search-icon {
+      position: absolute;
+      left: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .search-btn {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .search-btn:hover { opacity: 0.9; }
+    
+    /* Tabs */
+    .tabs {
+      display: flex;
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      padding: 0 16px;
+    }
+    .tab {
+      padding: 12px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .tab.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+    }
+    .tab:hover:not(.active) { color: var(--text); }
+    
+    /* Content Area */
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+    }
+    
+    /* Auth Overlay */
+    .auth-overlay {
+      position: absolute;
+      inset: 0;
+      background: var(--white);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      z-index: 10;
+    }
+    .auth-overlay.hidden { display: none; }
+    .auth-logo {
+      width: 48px;
+      height: 48px;
+      background: var(--primary);
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      color: white;
+      font-weight: 800;
+      font-size: 20px;
+      margin-bottom: 16px;
+    }
+    .auth-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .auth-subtitle {
+      font-size: 13px;
+      color: var(--muted);
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    .auth-input {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 14px;
+      margin-bottom: 10px;
+      outline: none;
+    }
+    .auth-input:focus { border-color: var(--primary); }
+    .auth-btn {
+      width: 100%;
+      padding: 12px;
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    .auth-btn:hover { opacity: 0.9; }
+    .auth-switch {
+      margin-top: 16px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .auth-switch button {
+      background: none;
+      border: none;
+      color: var(--primary);
+      cursor: pointer;
+      font-weight: 600;
+    }
+    
+    /* Product Cards (Alibaba Lens style) */
+    .product-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+    .product-card {
+      background: var(--white);
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: box-shadow 0.2s, transform 0.2s;
+    }
+    .product-card:hover {
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      transform: translateY(-2px);
+    }
+    .product-img {
+      width: 100%;
+      aspect-ratio: 1;
+      object-fit: cover;
+      background: var(--bg);
+    }
+    .product-info {
+      padding: 10px;
+    }
+    .product-name {
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      margin-bottom: 6px;
+      height: 33px;
+    }
+    .product-price {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--primary);
+    }
+    .product-meta {
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 4px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .product-sold {
+      background: #f0f0f0;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+    }
+    
+    /* Loading & Status */
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: var(--muted);
+    }
+    .status-bar {
+      background: var(--white);
+      padding: 8px 16px;
+      font-size: 11px;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #34c759;
+      margin-right: 6px;
+    }
+    .status-dot.offline { background: #ff3b30; }
+    
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--muted);
+    }
+    .empty-icon {
+      font-size: 40px;
+      margin-bottom: 12px;
+    }
+    
+    /* Scrollbar styling */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+  </style>
 </head>
-<body class="panel">
-  <div id="app" class="hidden">
-  <div class="head">
-    <div class="mark">PH</div>
-    <div>
-      <strong>Product Hunter</strong>
-      <small>CJdropshipping · Pinned winning-product panel</small>
-    </div>
-    <div class="user-bar">
-      <span class="email" id="userEmail" title=""></span>
-      <button type="button" id="profileBtn" class="btn-sm" title="Profile settings">👤</button>
-      <button type="button" id="themeToggle" class="btn-sm" title="Toggle dark/light mode">🌙</button>
-      <a href="https://cj-winning-product-hunter-poc.vercel.app/help" target="_blank" class="btn-sm help-btn" title="A-Z help guide" style="text-decoration:none">❓</a>
-      <button type="button" id="settingsBtn" class="btn-sm" title="CJdropshipping API Key">⚙ Key</button>
-      <button type="button" id="logoutBtn" class="btn-sm">Logout</button>
-    </div>
+<body>
+
+  <!-- Auth Overlay -->
+  <div id="authOverlay" class="auth-overlay">
+    <div class="auth-logo">PH</div>
+    <h2 class="auth-title">CJ Product Hunter</h2>
+    <p class="auth-subtitle">Sign in to hunt winning products</p>
+    
+    <input type="email" id="authEmail" class="auth-input" placeholder="Email address">
+    <input type="password" id="authPassword" class="auth-input" placeholder="Password">
+    <button id="authBtn" class="auth-btn">Sign In</button>
+    <p class="auth-switch">Don't have an account? <button id="toggleAuth">Sign Up</button></p>
   </div>
 
-  <div id="blockedMsg" class="blocked-msg hidden"></div>
-
-  <details class="filters" id="filterPanel">
-    <summary>⚙ Filters — price, stock, shipping, country</summary>
-    <div class="fgrid">
-      <label>Min price ($)<input type="number" id="fMinPrice" min="0" step="0.01" placeholder="e.g. 8"></label>
-      <label>Max price ($)<input type="number" id="fMaxPrice" min="0" step="0.01" placeholder="e.g. 60"></label>
-      <label>Min stock<input type="number" id="fMinStock" min="0" step="1" placeholder="e.g. 100"></label>
-      <label>Max stock<input type="number" id="fMaxStock" min="0" step="1" placeholder="e.g. 5000"></label>
-      <label>Min sellers (listed by)<input type="number" id="fMinListed" min="0" step="1" placeholder="e.g. 1"></label>
-      <label>Max sellers (listed by)<input type="number" id="fMaxListed" min="0" step="1" placeholder="e.g. 5"></label>
-      <label>Min orders (MOQ)<input type="number" id="fMinOrders" min="0" step="1" placeholder="e.g. 10"></label>
-      <label>Max orders<input type="number" id="fMaxOrders" min="0" step="1" placeholder="e.g. 1000"></label>
-      <label>Ship From:
-        <select id="fCountry">
-          <option value="">Any warehouse</option>
-          <option value="CN">China (CN)</option>
-          <option value="US">United States (US)</option>
-          <option value="TH">Thailand (TH)</option>
-          <option value="GB">United Kingdom (GB)</option>
-          <option value="DE">Germany (DE)</option>
-          <option value="FR">France (FR)</option>
-          <option value="ES">Spain (ES)</option>
-          <option value="IT">Italy (IT)</option>
-          <option value="NL">Netherlands (NL)</option>
-          <option value="CA">Canada (CA)</option>
-          <option value="AU">Australia (AU)</option>
-          <option value="JP">Japan (JP)</option>
-          <option value="KR">South Korea (KR)</option>
-          <option value="SG">Singapore (SG)</option>
-          <option value="MY">Malaysia (MY)</option>
-          <option value="VN">Vietnam (VN)</option>
-          <option value="HK">Hong Kong (HK)</option>
-          <option value="TW">Taiwan (TW)</option>
-        </select>
-      </label>
-      <label>Deliver to:
-        <select id="fDeliverTo">
-          <option value="US" selected>United States (US)</option>
-          <option value="GB">United Kingdom (GB)</option>
-          <option value="CA">Canada (CA)</option>
-          <option value="AU">Australia (AU)</option>
-          <option value="DE">Germany (DE)</option>
-          <option value="FR">France (FR)</option>
-          <option value="ES">Spain (ES)</option>
-          <option value="IT">Italy (IT)</option>
-          <option value="NL">Netherlands (NL)</option>
-          <option value="BE">Belgium (BE)</option>
-          <option value="SE">Sweden (SE)</option>
-          <option value="NO">Norway (NO)</option>
-          <option value="DK">Denmark (DK)</option>
-          <option value="FI">Finland (FI)</option>
-          <option value="PL">Poland (PL)</option>
-          <option value="AT">Austria (AT)</option>
-          <option value="CH">Switzerland (CH)</option>
-          <option value="IE">Ireland (IE)</option>
-          <option value="PT">Portugal (PT)</option>
-          <option value="CZ">Czechia (CZ)</option>
-          <option value="GR">Greece (GR)</option>
-          <option value="RO">Romania (RO)</option>
-          <option value="HU">Hungary (HU)</option>
-          <option value="MX">Mexico (MX)</option>
-          <option value="BR">Brazil (BR)</option>
-          <option value="CL">Chile (CL)</option>
-          <option value="JP">Japan (JP)</option>
-          <option value="KR">South Korea (KR)</option>
-          <option value="SG">Singapore (SG)</option>
-          <option value="MY">Malaysia (MY)</option>
-          <option value="TH">Thailand (TH)</option>
-          <option value="PH">Philippines (PH)</option>
-          <option value="ID">Indonesia (ID)</option>
-          <option value="VN">Vietnam (VN)</option>
-          <option value="NZ">New Zealand (NZ)</option>
-          <option value="AE">United Arab Emirates (AE)</option>
-          <option value="SA">Saudi Arabia (SA)</option>
-          <option value="IN">India (IN)</option>
-          <option value="IL">Israel (IL)</option>
-          <option value="TR">Turkey (TR)</option>
-          <option value="ZA">South Africa (ZA)</option>
-        </select>
-      </label>
-    </div>
-    <label class="check"><input type="checkbox" id="fFreeShip"> Free shipping only</label>
-    <label class="check"><input type="checkbox" id="fQuickDelivery"> 🚀 Quick delivery (stock in deliver-to warehouse)</label>
-    <div class="fchecks">
-      <label class="check"><input type="checkbox" id="fNewListing"> 🆕 New listing (CJ ≤ 7 days)</label>
-      <label class="check"><input type="checkbox" id="fNewProduct"> ✨ New product (CJ ≤ 30 days)</label>
-      <label class="check"><input type="checkbox" id="fRelisting"> ♻ Re-listing (old → active again)</label>
-      <label class="check"><input type="checkbox" id="fNeverListed"> 🚫 Never listed (0 sellers)</label>
-    </div>
-  </details>
-
-  <form id="searchForm" class="search">
-    <input id="query" placeholder="e.g. desk lamp, pet brush — or pick a category below" autocomplete="off" aria-label="Product search">
-    <button type="submit" id="searchButton">Hunt</button>
-  </form>
-
-  <div class="category-row">
-      <label for="categorySelect">📂 Browse category (no keyword needed):</label>
-      <select id="categorySelect">
-        <option value="">— Select a category —</option>
-        <option value="1">👗 Women's Clothing</option>
-        <option value="2">🐾 Pet Supplies</option>
-        <option value="3">🛋️ Home, Garden &amp; Furniture</option>
-        <option value="4">💄 Health, Beauty &amp; Hair</option>
-        <option value="5">💍 Jewelry &amp; Watches</option>
-        <option value="6">👔 Men's Clothing</option>
-        <option value="7">🎒 Bags &amp; Shoes</option>
-        <option value="8">🧸 Toys, Kids &amp; Babies</option>
-        <option value="9">⚽ Sports &amp; Outdoors</option>
-        <option value="10">📱 Consumer Electronics</option>
-        <option value="11">🔧 Home Improvement</option>
-        <option value="12">🚗 Automobiles &amp; Motorcycles</option>
-        <option value="13">📞 Phones &amp; Accessories</option>
-        <option value="14">💻 Computer &amp; Office</option>
-      </select>
-      <button type="button" id="categoryHuntBtn" class="chip">🎯 Hunt by category</button>
-    </div>
-
-  <div class="modes">
-    <button type="button" id="trendingButton" class="chip">🔥 Trending winners</button>
-    <button type="button" id="bestSellingButton" class="chip">🛒 Best-Selling</button>
-    <button type="button" id="bestSellerSupplierButton" class="chip">🏆 Best Supplier</button>
-    <button type="button" id="resetFilters" class="chip">↺ Reset filters</button>
-  </div>
-  <div class="results-tools">
-      <button type="button" id="exportCsvBtn" class="chip-sm" title="Export current results to CSV" hidden>⬇ Export CSV</button>
-      <span id="exportStatus" class="export-status"></span>
-    </div>
-    <div class="keyword-row">
-      <div class="saved-keywords" id="savedKeywords"></div>
-      <button type="button" id="saveKeywordBtn" class="chip-sm" title="Save current keyword">💾 Save keyword</button>
-    </div>
-    <div class="country-filter" id="countryFilterBar" hidden>
-    <label for="bestSellerCountry">🌍 Ship to:</label>
-    <select id="bestSellerCountry">
-      <option value="">All countries</option>
-      <option value="US">🇺🇸 United States</option>
-      <option value="GB">🇬🇧 United Kingdom</option>
-      <option value="CA">🇨🇦 Canada</option>
-      <option value="AU">🇦🇺 Australia</option>
-      <option value="DE">🇩🇪 Germany</option>
-      <option value="FR">🇫🇷 France</option>
-      <option value="ES">🇪🇸 Spain</option>
-      <option value="IT">🇮🇹 Italy</option>
-      <option value="NL">🇳🇱 Netherlands</option>
-      <option value="JP">🇯🇵 Japan</option>
-      <option value="KR">🇰🇷 South Korea</option>
-      <option value="SG">🇸🇬 Singapore</option>
-      <option value="MY">🇲🇾 Malaysia</option>
-      <option value="TH">🇹🇭 Thailand</option>
-      <option value="VN">🇻🇳 Vietnam</option>
-      <option value="PH">🇵🇭 Philippines</option>
-      <option value="IN">🇮🇳 India</option>
-      <option value="BR">🇧🇷 Brazil</option>
-      <option value="MX">🇲🇽 Mexico</option>
-      <option value="AE">🇦🇪 UAE</option>
-      <option value="SA">🇸🇦 Saudi Arabia</option>
-      <option value="IL">🇮🇱 Israel</option>
-      <option value="ZA">🇿🇦 South Africa</option>
-      <option value="NZ">🇳🇿 New Zealand</option>
-      <option value="SE">🇸🇪 Sweden</option>
-      <option value="NO">🇳🇴 Norway</option>
-      <option value="CH">🇨🇭 Switzerland</option>
-      <option value="PL">🇵🇱 Poland</option>
-      <option value="BE">🇧🇪 Belgium</option>
-      <option value="AT">🇦🇹 Austria</option>
-    </select>
-    <label for="bestSellerSort">📊 Sort by:</label>
-    <select id="bestSellerSort">
-      <option value="90d">90-day sales</option>
-      <option value="30d">30-day sales</option>
-      <option value="7d">7-day sales</option>
-    </select>
-  </div>
-
-  <div id="status" class="status">Checking your account…</div>
-  <div id="message" class="message"></div>
-  <div id="results" class="results"></div>
-
-  <div class="foot">
-    <div class="btnrow">
-      <button id="openWindow" type="button">Open as always-on window</button>
-    </div>
-    <p>Click a product to open it on CJdropshipping · "Supplier info" shows vendor details.
-       The panel stays open while you browse. Your CJ API key is stored securely on the server.</p>
-    <p class="wa-foot">
-      Need help? WhatsApp us:
-      <a href="https://wa.me/8801309524519" target="_blank" rel="noopener" class="wa-link">💬 +880 130 952 4519</a>
-      · <a href="https://cj-winning-product-hunter-poc.vercel.app/help" target="_blank" rel="noopener" class="wa-link">📚 Help Guide</a>
-    </p>
-  </div>
-
-  <div id="detailModal" class="modal" hidden>
-    <div class="modal-card">
-      <button class="modal-close" id="modalClose" type="button" aria-label="Close">×</button>
-      <div id="modalBody"></div>
-    </div>
-  </div>
-
-  <div id="listingModal" class="modal" hidden>
-    <div class="modal-card modal-card-wide">
-      <button class="modal-close" id="listingClose" type="button" aria-label="Close">×</button>
-      <div id="listingBody"></div>
-    </div>
-  </div>
-
-  <div id="settingsModal" class="modal" hidden>
-    <div class="modal-card">
-      <button class="modal-close" id="settingsClose" type="button" aria-label="Close">×</button>
-      <div class="settings-body">
-        <h3>⚙ Settings</h3>
-        <p class="muted">Paste <strong>your own</strong> CJdropshipping API Key — sign in to your CJ account and copy it, so every user hunts with their own account.</p>
-        <label class="set-label" for="cjKeyInput">CJdropshipping API Key</label>
-        <div class="set-row">
-          <input id="cjKeyInput" type="password" placeholder="Paste API Key here (…@api@…)" autocomplete="off" spellcheck="false">
-          <button type="button" id="cjKeyToggle" class="set-toggle">Show</button>
-        </div>
-        <p class="set-hint">Where to get it: log in to your CJdropshipping account → <strong>My CJ → API</strong> (API Docs) → copy the API Key and paste it above. The key is validated with CJ before saving and is stored only on the local server machine (<code>data/settings.json</code>), never in the extension.</p>
-        <div class="set-meta" id="cjKeyMeta">Checking current key…</div>
-        <div class="mactions">
-          <button type="button" class="set-remove" id="cjKeyRemove">Remove saved key</button>
-          <button type="button" class="set-save" id="cjKeySave">Save API Key</button>
-        </div>
-        <div class="set-status" id="cjKeyStatus" role="status"></div>
-      </div>
-    </div>
-  </div>
-
-  <div id="sellersModal" class="modal" hidden>
-    <div class="modal-card modal-card-wide">
-      <button class="modal-close" id="sellersClose" type="button" aria-label="Close">×</button>
-      <div id="sellersBody"></div>
-    </div>
-  </div>
-
-  </div><!-- /#app -->
-
-  <!-- Auth overlay (shown until the account is verified) -->
-  <div id="authOverlay">
-    <div class="auth-card">
+  <!-- Main App -->
+  <div id="app" style="display:none; flex-direction:column; height:100%;">
+    <!-- Header -->
+    <div class="header">
       <div class="logo">PH</div>
-      <h2>CJ Product Hunter</h2>
-      <p class="sub">Sign in to start hunting winning products.</p>
-      <p class="auth-msg" id="authMsg" role="status"></p>
-
-      <div id="nameWrap" hidden>
-        <label for="authName">Full name (optional)</label>
-        <input id="authName" type="text" autocomplete="name" placeholder="Your name">
-        <label for="authUsername">Username (optional)</label>
-        <input id="authUsername" type="text" autocomplete="username" placeholder="your_username">
-        <label for="authPhone">Phone (optional)</label>
-        <input id="authPhone" type="tel" autocomplete="tel" placeholder="+880 1XXX-XXXXXX">
+      <div>
+        <div class="header-title">CJ Product Hunter</div>
+        <div class="header-subtitle" id="userEmail">Loading...</div>
       </div>
+      <button class="close-btn" id="closePanel">×</button>
+    </div>
 
-      <label for="authEmail">Email</label>
-      <input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com">
-
-      <label for="authPassword">Password</label>
-      <div class="pwd-row">
-        <input id="authPassword" type="password" autocomplete="current-password" placeholder="••••••••">
-        <button type="button" class="pwd-toggle" id="pwdToggle" title="Show/hide password">👁</button>
+    <!-- Search -->
+    <div class="search-bar">
+      <div class="search-input-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="query" class="search-input" placeholder="Search winning products...">
+        <button id="searchBtn" class="search-btn">Hunt</button>
       </div>
-      <label class="save-pwd-row">
-        <input type="checkbox" id="savePasswordChk">
-        <span>💾 Save password (stored locally, encrypted)</span>
-      </label>
+    </div>
 
-      <button class="btn-full" id="authBtn" type="button">Sign in</button>
+    <!-- Tabs -->
+    <div class="tabs">
+      <div class="tab active" data-tab="products">📦 Products</div>
+      <div class="tab" data-tab="trending">🔥 Trending</div>
+      <div class="tab" data-tab="suppliers">🏭 Suppliers</div>
+    </div>
 
-      <p class="switch">
-        <span id="authSwitchText">Don't have an account?</span>
-        <button id="toggleAuth" type="button">Sign up</button>
-      </p>
+    <!-- Content -->
+    <div class="content" id="content">
+      <div class="empty-state">
+        <div class="empty-icon">🔍</div>
+        <p>Enter a keyword to find winning products</p>
+      </div>
+    </div>
 
-      <p class="auth-hint">
-        Setup (one-time): go to
-        <a href="https://www.cjdropshipping.com/my.html#/authorize/API" target="_blank" rel="noopener" class="api-link">CJ API Settings → Generate API Key</a>
-        and copy your API key. Then paste it below and click <strong>Connect CJ Key</strong>.
-        <br><small>Your key is encrypted before storage — we never read it.</small>
-      </p>
-
-      <p class="auth-contact">
-        Need help? WhatsApp us:
-        <a href="https://wa.me/8801309524519" target="_blank" rel="noopener" class="wa-link">💬 +880 130 952 4519</a>
-        · <a href="https://cj-winning-product-hunter-poc.vercel.app/help" target="_blank" rel="noopener" class="wa-link">📚 Help Guide</a>
-      </p>
+    <!-- Status Bar -->
+    <div class="status-bar">
+      <span><span class="status-dot"></span>Ready</span>
+      <span id="resultCount">—</span>
     </div>
   </div>
 
-  <!-- Profile settings modal -->
-  <div id="profileModal" class="modal" hidden>
-    <div class="modal-card">
-      <button class="modal-close" id="profileClose" type="button">×</button>
-      <h3>👤 Profile Settings</h3>
-      <p class="mdesc">Update your name, username, phone and password. Leave fields blank to keep current.</p>
-      <div class="mrow"><span>Current email</span><strong id="profileEmail">—</strong></div>
-      <div class="set-row">
-        <label for="profileFullName">Full name</label>
-        <input id="profileFullName" type="text" placeholder="Your full name">
-      </div>
-      <div class="set-row">
-        <label for="profileUsername">Username</label>
-        <input id="profileUsername" type="text" placeholder="your_username (3-30 chars)">
-      </div>
-      <div class="set-row">
-        <label for="profilePhone">Phone</label>
-        <input id="profilePhone" type="tel" placeholder="+880 1XXX-XXXXXX">
-      </div>
-      <details class="pwd-section">
-        <summary>🔒 Change password</summary>
-        <div class="set-row" style="margin-top:8px">
-          <label for="profileCurrentPwd">Current password</label>
-          <div class="pwd-row">
-            <input id="profileCurrentPwd" type="password" placeholder="Current password">
-            <button type="button" class="pwd-toggle" data-target="profileCurrentPwd">👁</button>
-          </div>
-        </div>
-        <div class="set-row">
-          <label for="profileNewPwd">New password</label>
-          <div class="pwd-row">
-            <input id="profileNewPwd" type="password" placeholder="New password (min 8 chars)">
-            <button type="button" class="pwd-toggle" data-target="profileNewPwd">👁</button>
-          </div>
-        </div>
-      </details>
-      <div class="mactions">
-        <button type="button" class="btn-full" id="profileSave">Save Changes</button>
-      </div>
-      <div class="set-status" id="profileStatus" role="status"></div>
-    </div>
-  </div>
+<script>
+  // ── Config ───────────────────────────────────────────────
+  const API_BASE = "https://cj-winning-product-hunter-poc.vercel.app";
+  const TOKEN_KEY = "cj_ph_token";
+  
+  let token = localStorage.getItem(TOKEN_KEY) || "";
+  let authMode = "signin";
+  let currentTab = "products";
 
-  <script src="popup.js"></script>
+  // ── DOM Elements ─────────────────────────────────────────
+  const authOverlay = document.getElementById("authOverlay");
+  const app = document.getElementById("app");
+  const authEmail = document.getElementById("authEmail");
+  const authPassword = document.getElementById("authPassword");
+  const authBtn = document.getElementById("authBtn");
+  const toggleAuth = document.getElementById("toggleAuth");
+  const queryInput = document.getElementById("query");
+  const searchBtn = document.getElementById("searchBtn");
+  const content = document.getElementById("content");
+  const userEmail = document.getElementById("userEmail");
+  const resultCount = document.getElementById("resultCount");
+  const tabs = document.querySelectorAll(".tab");
+
+  // ── Auth Functions ───────────────────────────────────────
+  async function apiFetch(path, options = {}) {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: options.method || "GET",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      ...(options.body ? { body: JSON.stringify(options.body) } : {})
+    });
+    
+    if (res.status === 401) {
+      localStorage.removeItem(TOKEN_KEY);
+      token = "";
+      showAuth();
+      throw new Error("Session expired");
+    }
+    
+    return res.json().catch(() => null);
+  }
+
+  async function handleAuth() {
+    const email = authEmail.value.trim();
+    const password = authPassword.value;
+    
+    if (!email || !password) {
+      alert("Please enter email and password");
+      return;
+    }
+    
+    if (password.length < 8 && authMode === "signup") {
+      alert("Password must be at least 8 characters");
+      return;
+    }
+    
+    authBtn.disabled = true;
+    authBtn.textContent = "Loading...";
+    
+    try {
+      const path = authMode === "signup" ? "/api/auth/signup" : "/api/auth/login";
+      const data = await apiFetch(path, {
+        method: "POST",
+        body: { email, password }
+      });
+      
+      if (!data || !data.token) {
+        authBtn.textContent = authMode === "signup" ? "Create Account" : "Sign In";
+        authBtn.disabled = false;
+        if (authMode === "signup") {
+          alert("Account created! Please check your email and sign in.");
+          setAuthMode("signin");
+        } else {
+          alert("Invalid credentials");
+        }
+        return;
+      }
+      
+      token = data.token;
+      localStorage.setItem(TOKEN_KEY, token);
+      showApp();
+      
+    } catch (err) {
+      alert(err.message || "Authentication failed");
+    } finally {
+      authBtn.disabled = false;
+      authBtn.textContent = authMode === "signup" ? "Create Account" : "Sign In";
+    }
+  }
+
+  function setAuthMode(mode) {
+    authMode = mode;
+    authBtn.textContent = mode === "signup" ? "Create Account" : "Sign In";
+    toggleAuth.textContent = mode === "signup" ? "Sign In" : "Sign Up";
+    document.querySelector(".auth-switch").innerHTML = 
+      `${mode === "signup" ? "Already have an account?" : "Don't have an account?"} <button id="toggleAuth">${mode === "signup" ? "Sign In" : "Sign Up"}</button>`;
+  }
+
+  function showAuth() {
+    authOverlay.classList.remove("hidden");
+    app.style.display = "none";
+  }
+
+  async function showApp() {
+    authOverlay.classList.add("hidden");
+    app.style.display = "flex";
+    
+    try {
+      const user = await apiFetch("/api/auth/me");
+      if (user && user.email) {
+        userEmail.textContent = `${user.full_name || user.email}`;
+        loadProducts();
+      }
+    } catch (err) {
+      console.error("Failed to get user:", err);
+    }
+  }
+
+  // ── Product Rendering ───────────────────────────────────
+  function renderProductCard(product) {
+    const sold = product.totalSales || 0;
+    const score = product.score || 0;
+    
+    return `
+      <div class="product-card" data-id="${product.id}">
+        <img src="${product.image || ''}" class="product-img" alt="" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23f0f0f0%22 width=%22100%22 height=%22100%22/><text x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22 font-size=%2212%22>No Img</text></svg>'">
+        <div class="product-info">
+          <div class="product-name">${escapeHtml(product.name || "Untitled")}</div>
+          <div class="product-price">$${Number(product.cjCost || 0).toFixed(2)}</div>
+          <div class="product-meta">
+            <span class="product-sold">${sold.toLocaleString()} sold</span>
+            <span>⭐ ${score}/100</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  async function loadProducts(params = {}) {
+    content.innerHTML = '<div class="loading">Searching...</div>';
+    
+    try {
+      const query = params.query || queryInput.value.trim();
+      const url = `/api/public/products?page=1&pageSize=10&q=${encodeURIComponent(query)}&sort=winning`;
+      
+      const data = await apiFetch(url);
+      const products = data?.products || [];
+      
+      resultCount.textContent = `${products.length} results`;
+      
+      if (!products.length) {
+        content.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">🔍</div>
+            <p>No products found. Try a different search term.</p>
+          </div>
+        `;
+        return;
+      }
+      
+      content.innerHTML = `<div class="product-grid">${products.map(renderProductCard).join('')}</div>`;
+      
+    } catch (err) {
+      content.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">⚠️</div>
+          <p>Error loading products: ${escapeHtml(err.message)}</p>
+        </div>
+      `;
+    }
+  }
+
+  async function loadTrending(country = "") {
+    content.innerHTML = '<div class="loading">Loading trending...</div>';
+    
+    try {
+      const url = country 
+        ? `/api/public/products?trending=true&country=${country}&page=1&pageSize=10`
+        : `/api/public/products?trending=true&page=1&pageSize=10`;
+        
+      const data = await apiFetch(url);
+      const products = data?.products || [];
+      
+      resultCount.textContent = `🔥 ${products.length} trending`;
+      
+      if (!products.length) {
+        content.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">🔥</div>
+            <p>No trending products found</p>
+          </div>
+        `;
+        return;
+      }
+      
+      content.innerHTML = `<div class="product-grid">${products.map(renderProductCard).join('')}</div>`;
+      
+    } catch (err) {
+      content.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">⚠️</div>
+          <p>Error: ${escapeHtml(err.message)}</p>
+        </div>
+      `;
+    }
+  }
+
+  // ── Event Listeners ──────────────────────────────────────
+  authBtn.addEventListener("click", handleAuth);
+  
+  toggleAuth.addEventListener("click", () => {
+    setAuthMode(authMode === "signin" ? "signup" : "signin");
+  });
+  
+  searchBtn.addEventListener("click", () => loadProducts());
+  queryInput.addEventListener("keypress", (e) => {
+    if (e.key === "Enter") loadProducts();
+  });
+  
+  tabs.forEach(tab => {
+    tab.addEventListener("click", () => {
+      tabs.forEach(t => t.classList.remove("active"));
+      tab.classList.add("active");
+      currentTab = tab.dataset.tab;
+      
+      if (currentTab === "products") loadProducts();
+      else if (currentTab === "trending") loadTrending();
+      else if (currentTab === "suppliers") content.innerHTML = '<div class="empty-state"><div class="empty-icon">🏭</div><p>Suppliers tab coming soon</p></div>';
+    });
+  });
+  
+  // Close panel
+  document.getElementById("closePanel").addEventListener("click", () => {
+    window.close();
+  });
+  
+  // Click on product card
+  content.addEventListener("click", (e) => {
+    const card = e.target.closest(".product-card");
+    if (card) {
+      const productId = card.dataset.id;
+      chrome.runtime.sendMessage({ action: "openProduct", productId }).catch(() => {});
+    }
+  });
+
+  // ── Init ─────────────────────────────────────────────────
+  async function init() {
+    if (!token) {
+      showAuth();
+      return;
+    }
+    
+    try {
+      const user = await apiFetch("/api/auth/me");
+      if (user && user.email) {
+        showApp();
+      } else {
+        showAuth();
+      }
+    } catch (err) {
+      showAuth();
+    }
+  }
+  
+  init();
+  
+  // Helper functions
+  function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
+</script>
 </body>
 </html>

@@ -61,15 +61,30 @@ chrome.webRequest.onBeforeRequest.addListener(
 );
 
 // ── Side panel setup ──────────────────────────────────────────────
-// NOTE: openPanelOnActionClick is intentionally NOT set.
-// When set to true, Chrome opens the side panel instead of the popup
-// when clicking the extension icon. We want the popup to open on click.
-// The side panel can still be opened manually via the sidePanel API.
 chrome.runtime.onInstalled.addListener(async () => {
   try {
-    // Do NOT set openPanelOnActionClick — it would override the popup
-    console.log("Extension installed — popup will open on icon click");
+    // Open side panel on CJdropshipping pages when icon is clicked
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+    console.log("Side panel enabled for CJdropshipping pages");
   } catch (error) {
     console.warn("Side panel setup error:", error);
+  }
+});
+
+// ── Handle messages from content script ─────────────────────
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.action === "openSidePanel") {
+    // Open the side panel in the current tab
+    chrome.sidePanel.open({ tabId: sender.tab?.id }).catch(() => {});
+    sendResponse({ ok: true });
+  }
+  
+  if (msg.action === "openProduct") {
+    // Open product in new tab or focus existing tab
+    const url = `https://www.cjdropshipping.com/product/-p-${encodeURIComponent(msg.productId)}.html`;
+    chrome.tabs.create({ url, active: true }).catch(() => {
+      window.open(url, '_blank');
+    });
+    sendResponse({ ok: true });
   }
 });
