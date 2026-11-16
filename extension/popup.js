@@ -2708,3 +2708,41 @@ if (document.readyState === "loading") {
 } else {
   init();
 }
+
+// ── Always-on floating panel ──────────────────────────────────────
+const openFloatingBtn = document.querySelector("#openFloatingBtn");
+
+if (openFloatingBtn) {
+  openFloatingBtn.addEventListener("click", () => {
+    // Try side panel first (works on CJ pages)
+    if (chrome.sidePanel && chrome.sidePanel.open) {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0] && /cjdropshipping\.com/.test(tabs[0].url || "")) {
+          chrome.sidePanel.open({ tabId: tabs[0].id }).catch(() => {
+            openAlwaysOnWindow();
+          });
+          return;
+        }
+      });
+    }
+    // Fallback: open popup window
+    openAlwaysOnWindow();
+  });
+}
+
+function openAlwaysOnWindow() {
+  // Open as a resizable window near the current popup
+  const w = window.screenX + 400;
+  const h = window.screenY;
+  chrome.windows.create({
+    url: "popup.html",
+    type: "popup",
+    width: 380,
+    height: 600,
+    left: w,
+    top: h
+  }).catch(() => {
+    // Fallback for browsers that don't support chrome.windows.create from popup
+    window.open("popup.html", "CJProductHunter_floating", "width=380,height=600,left=" + w + ",top=" + h + ",resizable=yes,scrollbars=yes");
+  });
+}

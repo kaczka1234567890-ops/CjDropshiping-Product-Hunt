@@ -243,3 +243,9 @@ code{background:var(--tag-bg);border-radius:4px;padding:1px 4px}.profit-section{
 .lp-done .mrow{display:flex;justify-content:space-between;gap:12px;font-size:13px;padding:7px 0;border-bottom:1px dashed var(--border)}
 .lp-done h3{margin:0 36px 5px 0;color:var(--accent)}
 .lp-done .lp-foot{display:flex;gap:8px;justify-content:center}
+
+/* ── Floating always-on panel ── */
+.floating-panel-section{margin-top:10px;padding-top:10px;border-top:1px solid var(--border)}
+.floating-btn{background:#ff7700;color:#fff;font-weight:700;padding:12px 16px;font-size:14px;border-radius:10px;width:100%;cursor:pointer;border:none}
+.floating-btn:hover{background:#ef6d00}
+.floating-hint{font-size:10px;color:var(--text3);margin-top:6px;line-height:1.4;text-align:center}
