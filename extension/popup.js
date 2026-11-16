@@ -369,11 +369,9 @@ async function submitAuth() {
       throw new Error("Signed in, but the account could not be loaded.\n" + detail);
     }
 
-    // After successful login/signup, redirect to smtools.online
-    setAuthMessage(authMode === "signup" ? "Account created! Redirecting…✓" : "Signed in successfully! ✓");
-    setTimeout(() => {
-      window.location.href = "https://www.smtools.online/";
-    }, 1000);
+    // After successful login/signup — show the main app
+    setAuthMessage(authMode === "signup" ? "Account created! ✓" : "Signed in successfully! ✓");
+    enterApp(me);
   } catch (error) {
     setAuthMessage(error.message || "Could not sign in.");
   } finally {

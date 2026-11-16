@@ -11,6 +11,27 @@ setInterval(async () => {
   } catch {}
 }, 30000);
 
+// ── Open app/side panel from content script ──────────────────────
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.action === "openApp") {
+    // Check if there's an existing side panel tab
+    const isCJPage = /cjdropshipping\.com/.test(sender.tab?.url || "");
+    if (isCJPage && sender.tab) {
+      // Open side panel in current tab
+      chrome.sidePanel.open({ tabId: sender.tab.id }).catch(() => {
+        // Fallback: open popup via action click
+        chrome.tabs.sendMessage(sender.tab.id, { action: "showPanel" });
+      });
+    } else {
+      // General case: open popup
+      chrome.windows.create({ type: "popup", width: 380, height: 580 }).catch(() => {
+        // Popup already handled by extension icon
+      });
+    }
+    sendResponse({ ok: true });
+  }
+});
+
 // ── Redirect safety net ─────────────────────────────────────────────
 // CJ product pages sometimes redirect to qksource.com when the product
 // ID in the URL is invalid or the product is no longer available.
@@ -40,10 +61,15 @@ chrome.webRequest.onBeforeRequest.addListener(
 );
 
 // ── Side panel setup ──────────────────────────────────────────────
+// NOTE: openPanelOnActionClick is intentionally NOT set.
+// When set to true, Chrome opens the side panel instead of the popup
+// when clicking the extension icon. We want the popup to open on click.
+// The side panel can still be opened manually via the sidePanel API.
 chrome.runtime.onInstalled.addListener(async () => {
   try {
-    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+    // Do NOT set openPanelOnActionClick — it would override the popup
+    console.log("Extension installed — popup will open on icon click");
   } catch (error) {
-    console.warn("Side panel behavior not set:", error);
+    console.warn("Side panel setup error:", error);
   }
 });
