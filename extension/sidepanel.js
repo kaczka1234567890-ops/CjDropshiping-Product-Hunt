@@ -389,12 +389,12 @@ document.addEventListener("click", async (evt) => {
   if(t.id==="logoutBtn"||t.closest("#logoutBtn")) { evt.preventDefault(); CJPH.logout(); return; }
   if(t.id==="themeBtn"||t.closest("#themeBtn")) { CJPH.toggleTheme(); return; }
 
-  // ── Filters toggle ──
-  if(t.id==="filtersToggle"||t.closest("#filtersToggle")) {
+  // ── Filters toggle (click header to expand/collapse grid) ──
+  if(t.id==="filtersHeader"||t.closest("#filtersHeader")) {
     const body = el("filtersBody");
-    const tog = el("filtersToggle");
-    if(body) body.style.display = body.style.display==="none" ? "grid" : "none";
-    if(tog) tog.classList.toggle("collapsed", body?.style.display==="none");
+    const hdr = el("filtersHeader");
+    if(body) body.style.display = body.style.display==="none" ? "block" : "none";
+    if(hdr) hdr.classList.toggle("collapsed", body?.style.display==="none");
     return;
   }
 
@@ -472,10 +472,10 @@ document.addEventListener("change", (evt) => {
   if(el("themeBtn")) el("themeBtn").textContent = storedTheme==="dark"?"☀️":"🌙";
 
   // Wire up filters toggle state
-  if(el("filtersToggle")) el("filtersToggle").addEventListener("click",()=>{
-    const body=el("filtersBody"), tog=el("filtersToggle");
-    if(body) body.style.display = body.style.display==="none"?"grid":"none";
-    if(tog) tog.classList.toggle("collapsed", body?.style.display==="none");
+  if(el("filtersHeader")) el("filtersHeader").addEventListener("click",()=>{
+    const body=el("filtersBody"), hdr=el("filtersHeader");
+    if(body) body.style.display = body.style.display==="none"?"block":"none";
+    if(hdr) hdr.classList.toggle("collapsed", body?.style.display==="none");
   });
 
   console.log("[CJ-PH][side] ★ wireButtons completed");
