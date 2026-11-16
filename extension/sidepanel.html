@@ -13,6 +13,8 @@
       --text: #1d1d1f;
       --muted: #6e6e73;
       --border: #e5e5ea;
+      --danger: #dc2626;
+      --success: #16a34a;
     }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -23,123 +25,8 @@
       flex-direction: column;
       overflow: hidden;
     }
-    
-    /* Header */
-    .header {
-      background: var(--white);
-      border-bottom: 1px solid var(--border);
-      padding: 12px 16px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex-shrink: 0;
-    }
-    .logo {
-      width: 32px;
-      height: 32px;
-      background: var(--primary);
-      border-radius: 8px;
-      display: grid;
-      place-items: center;
-      color: white;
-      font-weight: 800;
-      font-size: 14px;
-    }
-    .header-title {
-      flex: 1;
-      font-size: 15px;
-      font-weight: 600;
-    }
-    .header-subtitle {
-      font-size: 11px;
-      color: var(--muted);
-    }
-    .close-btn {
-      width: 28px;
-      height: 28px;
-      border: none;
-      background: var(--bg);
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 16px;
-      display: grid;
-      place-items: center;
-      color: var(--muted);
-    }
-    .close-btn:hover { background: var(--border); }
-    
-    /* Search Bar */
-    .search-bar {
-      background: var(--white);
-      padding: 12px 16px;
-      border-bottom: 1px solid var(--border);
-      flex-shrink: 0;
-    }
-    .search-input-wrap {
-      position: relative;
-      display: flex;
-      gap: 8px;
-    }
-    .search-input {
-      flex: 1;
-      padding: 10px 12px 10px 36px;
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      font-size: 13px;
-      outline: none;
-      transition: border-color 0.2s;
-    }
-    .search-input:focus { border-color: var(--primary); }
-    .search-icon {
-      position: absolute;
-      left: 12px;
-      top: 50%;
-      transform: translateY(-50%);
-      color: var(--muted);
-      font-size: 14px;
-    }
-    .search-btn {
-      background: var(--primary);
-      color: white;
-      border: none;
-      padding: 10px 16px;
-      border-radius: 10px;
-      font-weight: 600;
-      cursor: pointer;
-      font-size: 13px;
-    }
-    .search-btn:hover { opacity: 0.9; }
-    
-    /* Tabs */
-    .tabs {
-      display: flex;
-      background: var(--white);
-      border-bottom: 1px solid var(--border);
-      padding: 0 16px;
-    }
-    .tab {
-      padding: 12px 16px;
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--muted);
-      cursor: pointer;
-      border-bottom: 2px solid transparent;
-      transition: all 0.2s;
-    }
-    .tab.active {
-      color: var(--primary);
-      border-bottom-color: var(--primary);
-    }
-    .tab:hover:not(.active) { color: var(--text); }
-    
-    /* Content Area */
-    .content {
-      flex: 1;
-      overflow-y: auto;
-      padding: 16px;
-    }
-    
-    /* Auth Overlay */
+
+    /* ── Auth Overlay ── */
     .auth-overlay {
       position: absolute;
       inset: 0;
@@ -167,27 +54,35 @@
     .auth-title {
       font-size: 18px;
       font-weight: 700;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
     .auth-subtitle {
-      font-size: 13px;
+      font-size: 12px;
       color: var(--muted);
       text-align: center;
-      margin-bottom: 24px;
+      margin-bottom: 20px;
     }
+    .auth-msg {
+      font-size: 12px;
+      color: var(--danger);
+      margin-bottom: 12px;
+      min-height: 16px;
+      text-align: center;
+    }
+    .auth-msg.ok { color: var(--success); }
     .auth-input {
       width: 100%;
-      padding: 12px;
+      padding: 11px 12px;
       border: 1px solid var(--border);
       border-radius: 10px;
-      font-size: 14px;
-      margin-bottom: 10px;
+      font-size: 13px;
+      margin-bottom: 8px;
       outline: none;
     }
     .auth-input:focus { border-color: var(--primary); }
     .auth-btn {
       width: 100%;
-      padding: 12px;
+      padding: 11px;
       background: var(--primary);
       color: white;
       border: none;
@@ -195,13 +90,15 @@
       font-size: 14px;
       font-weight: 600;
       cursor: pointer;
-      margin-top: 8px;
+      margin-top: 4px;
     }
     .auth-btn:hover { opacity: 0.9; }
+    .auth-btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .auth-switch {
-      margin-top: 16px;
+      margin-top: 14px;
       font-size: 12px;
       color: var(--muted);
+      text-align: center;
     }
     .auth-switch button {
       background: none;
@@ -209,25 +106,152 @@
       color: var(--primary);
       cursor: pointer;
       font-weight: 600;
+      font-size: 12px;
+      padding: 0;
     }
-    
-    /* Product Cards (Alibaba Lens style) */
+    .auth-hint {
+      margin-top: 14px;
+      font-size: 10px;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    /* ── Main App ── */
+    #app { display: none; flex-direction: column; height: 100%; }
+
+    /* Header */
+    .header {
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    .logo {
+      width: 32px;
+      height: 32px;
+      background: var(--primary);
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      color: white;
+      font-weight: 800;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+    .header-title-wrap { flex: 1; }
+    .header-title {
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .header-subtitle {
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .header-actions { display: flex; gap: 6px; }
+    .hdr-btn {
+      width: 30px;
+      height: 30px;
+      border: none;
+      background: var(--bg);
+      border-radius: 7px;
+      cursor: pointer;
+      font-size: 14px;
+      display: grid;
+      place-items: center;
+      color: var(--muted);
+    }
+    .hdr-btn:hover { background: var(--border); }
+
+    /* Search Bar */
+    .search-bar {
+      background: var(--white);
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .search-input-wrap {
+      position: relative;
+      display: flex;
+      gap: 8px;
+    }
+    .search-input {
+      flex: 1;
+      padding: 9px 12px 9px 34px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .search-input:focus { border-color: var(--primary); }
+    .search-icon {
+      position: absolute;
+      left: 11px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted);
+      font-size: 13px;
+      pointer-events: none;
+    }
+    .search-btn {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 9px 14px;
+      border-radius: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .search-btn:hover { opacity: 0.9; }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      padding: 0 16px;
+    }
+    .tab {
+      padding: 11px 14px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+    .tab:hover:not(.active) { color: var(--text); }
+
+    /* Content Area */
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+    }
+
+    /* Product Cards */
     .product-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      gap: 12px;
+      gap: 10px;
     }
     .product-card {
       background: var(--white);
-      border-radius: 12px;
+      border-radius: 10px;
       overflow: hidden;
       border: 1px solid var(--border);
       cursor: pointer;
       transition: box-shadow 0.2s, transform 0.2s;
     }
     .product-card:hover {
-      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-      transform: translateY(-2px);
+      box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+      transform: translateY(-1px);
     }
     .product-img {
       width: 100%;
@@ -235,81 +259,74 @@
       object-fit: cover;
       background: var(--bg);
     }
-    .product-info {
-      padding: 10px;
-    }
+    .product-info { padding: 8px; }
     .product-name {
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 500;
-      line-height: 1.4;
+      line-height: 1.3;
       display: -webkit-box;
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
       overflow: hidden;
-      margin-bottom: 6px;
-      height: 33px;
+      margin-bottom: 5px;
+      height: 29px;
     }
     .product-price {
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 700;
       color: var(--primary);
     }
     .product-meta {
-      font-size: 10px;
+      font-size: 9px;
       color: var(--muted);
-      margin-top: 4px;
+      margin-top: 3px;
       display: flex;
       justify-content: space-between;
     }
     .product-sold {
       background: #f0f0f0;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 10px;
+      padding: 1px 5px;
+      border-radius: 3px;
     }
-    
+
     /* Loading & Status */
     .loading {
       text-align: center;
       padding: 40px;
       color: var(--muted);
+      font-size: 13px;
     }
     .status-bar {
       background: var(--white);
-      padding: 8px 16px;
-      font-size: 11px;
+      padding: 7px 16px;
+      font-size: 10px;
       color: var(--muted);
       border-top: 1px solid var(--border);
       display: flex;
       justify-content: space-between;
       align-items: center;
+      flex-shrink: 0;
     }
     .status-dot {
       display: inline-block;
-      width: 8px;
-      height: 8px;
+      width: 7px;
+      height: 7px;
       border-radius: 50%;
       background: #34c759;
-      margin-right: 6px;
+      margin-right: 5px;
     }
     .status-dot.offline { background: #ff3b30; }
-    
-    /* Empty State */
     .empty-state {
       text-align: center;
-      padding: 40px 20px;
+      padding: 40px 16px;
       color: var(--muted);
+      font-size: 12px;
     }
-    .empty-icon {
-      font-size: 40px;
-      margin-bottom: 12px;
-    }
-    
-    /* Scrollbar styling */
-    ::-webkit-scrollbar { width: 6px; }
+    .empty-icon { font-size: 36px; margin-bottom: 10px; }
+
+    ::-webkit-scrollbar { width: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-    ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
   </style>
 </head>
 <body>
@@ -319,30 +336,46 @@
     <div class="auth-logo">PH</div>
     <h2 class="auth-title">CJ Product Hunter</h2>
     <p class="auth-subtitle">Sign in to hunt winning products</p>
-    
-    <input type="email" id="authEmail" class="auth-input" placeholder="Email address">
-    <input type="password" id="authPassword" class="auth-input" placeholder="Password">
-    <button id="authBtn" class="auth-btn">Sign In</button>
-    <p class="auth-switch">Don't have an account? <button id="toggleAuth">Sign Up</button></p>
+    <p class="auth-msg" id="authMsg"></p>
+
+    <input type="email" id="authEmail" class="auth-input" placeholder="Email address" autocomplete="email">
+    <input type="password" id="authPassword" class="auth-input" placeholder="Password" autocomplete="current-password">
+
+    <!-- Signup-only extra fields -->
+    <div id="nameWrap" class="hidden" style="width:100%">
+      <input type="text" id="authName" class="auth-input" placeholder="Full name (optional)" autocomplete="name" style="margin-bottom:6px">
+    </div>
+
+    <button id="authBtn" class="auth-btn" type="button">Sign In</button>
+
+    <p class="auth-switch">
+      <span id="switchLabel">Don't have an account?</span>
+      <button id="toggleAuth" type="button">Sign Up</button>
+    </p>
+
+    <p class="auth-hint" id="authHint">Setup: go to <strong>My CJ → API</strong> in cjdropshipping.com and generate an API key.</p>
   </div>
 
   <!-- Main App -->
-  <div id="app" style="display:none; flex-direction:column; height:100%;">
+  <div id="app">
     <!-- Header -->
     <div class="header">
       <div class="logo">PH</div>
-      <div>
+      <div class="header-title-wrap">
         <div class="header-title">CJ Product Hunter</div>
-        <div class="header-subtitle" id="userEmail">Loading...</div>
+        <div class="header-subtitle" id="userEmail">—</div>
       </div>
-      <button class="close-btn" id="closePanel">×</button>
+      <div class="header-actions">
+        <button class="hdr-btn" id="themeBtn" title="Toggle dark/light">🌙</button>
+        <button class="hdr-btn" id="closePanel" title="Close panel">×</button>
+      </div>
     </div>
 
     <!-- Search -->
     <div class="search-bar">
       <div class="search-input-wrap">
         <span class="search-icon">🔍</span>
-        <input type="text" id="query" class="search-input" placeholder="Search winning products...">
+        <input type="text" id="query" class="search-input" placeholder="Search winning products…">
         <button id="searchBtn" class="search-btn">Hunt</button>
       </div>
     </div>
@@ -364,285 +397,244 @@
 
     <!-- Status Bar -->
     <div class="status-bar">
-      <span><span class="status-dot"></span>Ready</span>
+      <span><span class="status-dot" id="statusDot"></span><span id="statusText">Ready</span></span>
       <span id="resultCount">—</span>
     </div>
   </div>
 
 <script>
-  // ── Config ───────────────────────────────────────────────
-  const API_BASE = "https://cj-winning-product-hunter-poc.vercel.app";
-  const TOKEN_KEY = "cj_ph_token";
-  
-  let token = localStorage.getItem(TOKEN_KEY) || "";
-  let authMode = "signin";
-  let currentTab = "products";
+/* ── Config ──────────────────────────────────────────────────── */
+const API_BASE = "https://cj-winning-product-hunter-poc.vercel.app";
+const TOKEN_KEY  = "cj_ph_token";          // sidepanel uses its own key
+const THEME_KEY  = "cjphTheme";
+let token     = localStorage.getItem(TOKEN_KEY) || "";
+let authMode  = "signin";                   // "signin" | "signup"
+let currentTab = "products";
 
-  // ── DOM Elements ─────────────────────────────────────────
-  const authOverlay = document.getElementById("authOverlay");
-  const app = document.getElementById("app");
-  const authEmail = document.getElementById("authEmail");
-  const authPassword = document.getElementById("authPassword");
-  const authBtn = document.getElementById("authBtn");
-  const toggleAuth = document.getElementById("toggleAuth");
-  const queryInput = document.getElementById("query");
-  const searchBtn = document.getElementById("searchBtn");
-  const content = document.getElementById("content");
-  const userEmail = document.getElementById("userEmail");
-  const resultCount = document.getElementById("resultCount");
-  const tabs = document.querySelectorAll(".tab");
+/* ── DOM helpers ─────────────────────────────────────────────── */
+const $ = (id) => document.getElementById(id);
+const q   = (sel) => document.querySelector(sel);
+const qs  = (sel) => document.querySelectorAll(sel);
 
-  // ── Auth Functions ───────────────────────────────────────
-  async function apiFetch(path, options = {}) {
-    const res = await fetch(`${API_BASE}${path}`, {
-      method: options.method || "GET",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      },
-      ...(options.body ? { body: JSON.stringify(options.body) } : {})
-    });
-    
-    if (res.status === 401) {
-      localStorage.removeItem(TOKEN_KEY);
-      token = "";
-      showAuth();
-      throw new Error("Session expired");
-    }
-    
-    return res.json().catch(() => null);
+/* ── Auth UI helpers ─────────────────────────────────────────── */
+function getEl(id) { return $(id); }
+
+function showAuthMsg(msg, ok) {
+  const el = $("authMsg");
+  el.textContent = msg || "";
+  el.className = "auth-msg" + (ok ? " ok" : "");
+}
+
+function updateSwitchLabel() {
+  if (authMode === "signin") {
+    $("switchLabel").textContent = "Don't have an account? ";
+    $("authBtn").textContent   = "Sign In";
+  } else {
+    $("switchLabel").textContent = "Already have an account? ";
+    $("authBtn").textContent   = "Create Account";
   }
+}
 
-  async function handleAuth() {
-    const email = authEmail.value.trim();
-    const password = authPassword.value;
-    
-    if (!email || !password) {
-      alert("Please enter email and password");
-      return;
-    }
-    
-    if (password.length < 8 && authMode === "signup") {
-      alert("Password must be at least 8 characters");
-      return;
-    }
-    
-    authBtn.disabled = true;
-    authBtn.textContent = "Loading...";
-    
-    try {
-      const path = authMode === "signup" ? "/api/auth/signup" : "/api/auth/login";
-      const data = await apiFetch(path, {
-        method: "POST",
-        body: { email, password }
-      });
-      
-      if (!data || !data.token) {
-        authBtn.textContent = authMode === "signup" ? "Create Account" : "Sign In";
-        authBtn.disabled = false;
-        if (authMode === "signup") {
-          alert("Account created! Please check your email and sign in.");
-          setAuthMode("signin");
-        } else {
-          alert("Invalid credentials");
-        }
-        return;
+function setAuthMode(mode) {
+  authMode = mode;
+  updateSwitchLabel();
+  showAuthMsg("");
+}
+
+function showAppUI(user) {
+  $("authOverlay").classList.add("hidden");
+  const app = $("app");
+  app.style.display = "flex";
+  if (user && user.email) {
+    $("userEmail").textContent = user.full_name || user.email;
+  }
+}
+
+function showAuthUI() {
+  $("authOverlay").classList.remove("hidden");
+  $("app").style.display = "none";
+  showAuthMsg("");
+}
+
+/* ── Token / session ─────────────────────────────────────────── */
+async function apiFetch(path, opts = {}) {
+  const headers = { "Content-Type": "application/json", ...opts.headers };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(API_BASE + path, { method: opts.method || "GET", headers, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  if (res.status === 401) {
+    token = ""; localStorage.removeItem(TOKEN_KEY); showAuthUI(); throw new Error("Session expired — please sign in again.");
+  }
+  return res.json().catch(() => null);
+}
+
+/* ── Submit Auth (Sign In / Sign Up) ────────────────────────── */
+async function submitAuth() {
+  const email   = ($("authEmail").value || "").trim();
+  const password = $("authPassword").value || "";
+  showAuthMsg(authMode === "signup" ? "Creating your account…" : "Signing in…");
+  $("authBtn").disabled = true;
+
+  try {
+    if (!email || !password) { showAuthMsg("Please enter your email and password."); $("authBtn").disabled = false; return; }
+    if (authMode === "signup" && password.length < 8) { showAuthMsg("Password must be at least 8 characters.", false); $("authBtn").disabled = false; return; }
+
+    const path  = authMode === "signup" ? "/api/auth/signup" : "/api/auth/login";
+    const data  = await apiFetch(path, { method: "POST", body: { email, password } });
+
+    console.log("[CJ-PH][side] auth response:", data);
+
+    if (!data) { showAuthMsg("Network error — check your connection.", false); $("authBtn").disabled = false; return; }
+
+    if (authMode === "signup") {
+      if (data.token) {
+        // Auto-login on signup
+        token = data.token;
+        localStorage.setItem(TOKEN_KEY, token);
+        const me = await apiFetch("/api/auth/me");
+        if (me && me.email) { showAppUI(me); }
+        else { showAuthMsg("Account created but profile load failed.", false); $("authBtn").disabled = false; }
+      } else {
+        // Email confirmation required
+        showAuthMsg("✅ Account created! Check your email and click the confirmation link, then sign in.", true);
+        setAuthMode("signin");          // ← reset so Sign In button works
+        $("authBtn").disabled = false;
       }
-      
+    } else {
+      // Login
+      if (!data.token) { showAuthMsg(data.error || "Invalid email or password.", false); $("authBtn").disabled = false; return; }
       token = data.token;
       localStorage.setItem(TOKEN_KEY, token);
-      showApp();
-      
-    } catch (err) {
-      alert(err.message || "Authentication failed");
-    } finally {
-      authBtn.disabled = false;
-      authBtn.textContent = authMode === "signup" ? "Create Account" : "Sign In";
+      const me = await apiFetch("/api/auth/me");
+      if (me && me.email) { showAppUI(me); }
+      else { showAuthMsg("Signed in but profile could not be loaded.", false); $("authBtn").disabled = false; }
     }
+  } catch (err) {
+    console.error("[CJ-PH][side] auth error:", err);
+    showAuthMsg(err.message || "Authentication failed.", false);
+    $("authBtn").disabled = false;
+  }
+}
+
+/* ── Document-level event delegation (survives DOM replacements) ─*/
+document.addEventListener("click", (evt) => {
+  const t = evt.target;
+
+  /* Sign In / Create Account */
+  if (t.id === "authBtn" || t.closest("#authBtn")) {
+    evt.preventDefault(); evt.stopPropagation();
+    submitAuth();
+    return;
   }
 
-  function setAuthMode(mode) {
-    authMode = mode;
-    authBtn.textContent = mode === "signup" ? "Create Account" : "Sign In";
-    toggleAuth.textContent = mode === "signup" ? "Sign In" : "Sign Up";
-    document.querySelector(".auth-switch").innerHTML = 
-      `${mode === "signup" ? "Already have an account?" : "Don't have an account?"} <button id="toggleAuth">${mode === "signup" ? "Sign In" : "Sign Up"}</button>`;
-  }
-
-  function showAuth() {
-    authOverlay.classList.remove("hidden");
-    app.style.display = "none";
-  }
-
-  async function showApp() {
-    authOverlay.classList.add("hidden");
-    app.style.display = "flex";
-    
-    try {
-      const user = await apiFetch("/api/auth/me");
-      if (user && user.email) {
-        userEmail.textContent = `${user.full_name || user.email}`;
-        loadProducts();
-      }
-    } catch (err) {
-      console.error("Failed to get user:", err);
-    }
-  }
-
-  // ── Product Rendering ───────────────────────────────────
-  function renderProductCard(product) {
-    const sold = product.totalSales || 0;
-    const score = product.score || 0;
-    
-    return `
-      <div class="product-card" data-id="${product.id}">
-        <img src="${product.image || ''}" class="product-img" alt="" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23f0f0f0%22 width=%22100%22 height=%22100%22/><text x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22 font-size=%2212%22>No Img</text></svg>'">
-        <div class="product-info">
-          <div class="product-name">${escapeHtml(product.name || "Untitled")}</div>
-          <div class="product-price">$${Number(product.cjCost || 0).toFixed(2)}</div>
-          <div class="product-meta">
-            <span class="product-sold">${sold.toLocaleString()} sold</span>
-            <span>⭐ ${score}/100</span>
-          </div>
-        </div>
-      </div>
-    `;
-  }
-
-  async function loadProducts(params = {}) {
-    content.innerHTML = '<div class="loading">Searching...</div>';
-    
-    try {
-      const query = params.query || queryInput.value.trim();
-      const url = `/api/public/products?page=1&pageSize=10&q=${encodeURIComponent(query)}&sort=winning`;
-      
-      const data = await apiFetch(url);
-      const products = data?.products || [];
-      
-      resultCount.textContent = `${products.length} results`;
-      
-      if (!products.length) {
-        content.innerHTML = `
-          <div class="empty-state">
-            <div class="empty-icon">🔍</div>
-            <p>No products found. Try a different search term.</p>
-          </div>
-        `;
-        return;
-      }
-      
-      content.innerHTML = `<div class="product-grid">${products.map(renderProductCard).join('')}</div>`;
-      
-    } catch (err) {
-      content.innerHTML = `
-        <div class="empty-state">
-          <div class="empty-icon">⚠️</div>
-          <p>Error loading products: ${escapeHtml(err.message)}</p>
-        </div>
-      `;
-    }
-  }
-
-  async function loadTrending(country = "") {
-    content.innerHTML = '<div class="loading">Loading trending...</div>';
-    
-    try {
-      const url = country 
-        ? `/api/public/products?trending=true&country=${country}&page=1&pageSize=10`
-        : `/api/public/products?trending=true&page=1&pageSize=10`;
-        
-      const data = await apiFetch(url);
-      const products = data?.products || [];
-      
-      resultCount.textContent = `🔥 ${products.length} trending`;
-      
-      if (!products.length) {
-        content.innerHTML = `
-          <div class="empty-state">
-            <div class="empty-icon">🔥</div>
-            <p>No trending products found</p>
-          </div>
-        `;
-        return;
-      }
-      
-      content.innerHTML = `<div class="product-grid">${products.map(renderProductCard).join('')}</div>`;
-      
-    } catch (err) {
-      content.innerHTML = `
-        <div class="empty-state">
-          <div class="empty-icon">⚠️</div>
-          <p>Error: ${escapeHtml(err.message)}</p>
-        </div>
-      `;
-    }
-  }
-
-  // ── Event Listeners ──────────────────────────────────────
-  authBtn.addEventListener("click", handleAuth);
-  
-  toggleAuth.addEventListener("click", () => {
+  /* Toggle signin ↔ signup */
+  if (t.id === "toggleAuth" || t.closest("#toggleAuth")) {
+    evt.preventDefault(); evt.stopPropagation();
     setAuthMode(authMode === "signin" ? "signup" : "signin");
-  });
-  
-  searchBtn.addEventListener("click", () => loadProducts());
-  queryInput.addEventListener("keypress", (e) => {
-    if (e.key === "Enter") loadProducts();
-  });
-  
-  tabs.forEach(tab => {
-    tab.addEventListener("click", () => {
-      tabs.forEach(t => t.classList.remove("active"));
-      tab.classList.add("active");
-      currentTab = tab.dataset.tab;
-      
-      if (currentTab === "products") loadProducts();
-      else if (currentTab === "trending") loadTrending();
-      else if (currentTab === "suppliers") content.innerHTML = '<div class="empty-state"><div class="empty-icon">🏭</div><p>Suppliers tab coming soon</p></div>';
-    });
-  });
-  
-  // Close panel
-  document.getElementById("closePanel").addEventListener("click", () => {
-    window.close();
-  });
-  
-  // Click on product card
-  content.addEventListener("click", (e) => {
-    const card = e.target.closest(".product-card");
-    if (card) {
-      const productId = card.dataset.id;
-      chrome.runtime.sendMessage({ action: "openProduct", productId }).catch(() => {});
-    }
-  });
+    return;
+  }
 
-  // ── Init ─────────────────────────────────────────────────
-  async function init() {
-    if (!token) {
-      showAuth();
-      return;
-    }
-    
-    try {
-      const user = await apiFetch("/api/auth/me");
-      if (user && user.email) {
-        showApp();
-      } else {
-        showAuth();
-      }
-    } catch (err) {
-      showAuth();
-    }
+  /* Close panel */
+  if (t.id === "closePanel" || t.closest("#closePanel")) {
+    window.close();
+    return;
   }
-  
-  init();
-  
-  // Helper functions
-  function escapeHtml(text) {
-    const div = document.createElement("div");
-    div.textContent = text;
-    return div.innerHTML;
+
+  /* Theme toggle */
+  if (t.id === "themeBtn" || t.closest("#themeBtn")) {
+    const root = document.documentElement;
+    const isDark = root.getAttribute("data-theme") === "dark";
+    if (isDark) { root.removeAttribute("data-theme"); try { localStorage.setItem(THEME_KEY, "light"); } catch {} q("#themeBtn").textContent = "🌙"; }
+    else         { root.setAttribute("data-theme", "dark"); try { localStorage.setItem(THEME_KEY, "dark"); } catch {} q("#themeBtn").textContent = "☀️"; }
+    return;
   }
+
+  /* Tab switches */
+  if (t.classList.contains("tab")) {
+    qs(".tab").forEach(tab => tab.classList.remove("active"));
+    t.classList.add("active");
+    currentTab = t.dataset.tab;
+    if (currentTab === "products") loadProducts();
+    else if (currentTab === "trending") loadTrending();
+    else content.innerHTML = '<div class="empty-state"><div class="empty-icon">🏭</div><p>Suppliers coming soon</p></div>';
+    return;
+  }
+
+  /* Product card click → open in main window */
+  const card = t.closest(".product-card");
+  if (card) {
+    const pid = card.dataset.id;
+    chrome.runtime.sendMessage({ action: "openProduct", productId: pid }).catch(() => {});
+    return;
+  }
+});
+
+/* Enter key in auth form submits */
+document.addEventListener("keydown", (evt) => {
+  if (evt.key === "Enter" && !$("authOverlay").classList.contains("hidden")) {
+    submitAuth();
+  }
+});
+
+/* ── Load Products ───────────────────────────────────────────── */
+function renderCard(p) {
+  return `<div class="product-card" data-id="${p.id}">
+    <img class="product-img" src="${p.image || ''}" alt="" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect fill=%22%23f0f0f0%22 width=%22100%22 height=%22100%22/><text x=%2250%22 y=%2250%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23aaa%22 font-size=%2210%22>No img</text></svg>'">
+    <div class="product-info">
+      <div class="product-name">${esc(p.name || "Untitled")}</div>
+      <div class="product-price">$${Number(p.cjCost || 0).toFixed(2)}</div>
+      <div class="product-meta"><span class="product-sold">${(p.totalSales||0).toLocaleString()} sold</span><span>⭐ ${p.score||0}/100</span></div>
+    </div></div>`;
+}
+function esc(s) { return String(s||"").replace(/[&<>"']/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[c]); }
+
+async function loadProducts(qry) {
+  setContent('<div class="loading">Searching…</div>');
+  try {
+    const query = qry !== undefined ? qry : (q("#query")?.value || "").trim();
+    const url = `/api/public/products?page=1&pageSize=10&q=${encodeURIComponent(query)}&sort=winning`;
+    const data = await apiFetch(url);
+    const list = data?.products || [];
+    $("resultCount").textContent = `${list.length} results`;
+    if (!list.length) { setContent(`<div class="empty-state"><div class="empty-icon">🔍</div><p>No products found for "${esc(query)}"</p></div>`); return; }
+    setContent(`<div class="product-grid">${list.map(renderCard).join("")}</div>`);
+  } catch (err) {
+    setContent(`<div class="empty-state"><div class="empty-icon">⚠️</div><p>${esc(err.message)}</p></div>`);
+  }
+}
+
+async function loadTrending(country) {
+  setContent('<div class="loading">Loading trending…</div>');
+  try {
+    const url = `/api/public/products?trending=true&page=1&pageSize=10${country ? "&country="+encodeURIComponent(country) : ""}`;
+    const data = await apiFetch(url);
+    const list = data?.products || [];
+    $("resultCount").textContent = `🔥 ${list.length} trending`;
+    if (!list.length) { setContent(`<div class="empty-state"><div class="empty-icon">🔥</div><p>No trending products found</p></div>`); return; }
+    setContent(`<div class="product-grid">${list.map(renderCard).join("")}</div>`);
+  } catch (err) {
+    setContent(`<div class="empty-state"><div class="empty-icon">⚠️</div><p>${esc(err.message)}</p></div>`);
+  }
+}
+
+function setContent(html) { $("content").innerHTML = html; }
+
+/* Search button & Enter key */
+q("#searchBtn").addEventListener("click", () => loadProducts());
+q("#query").addEventListener("keypress", (e) => { if (e.key==="Enter") loadProducts(); });
+
+/* ── Init ────────────────────────────────────────────────────── */
+(function init() {
+  // Restore theme
+  const storedTheme = localStorage.getItem(THEME_KEY);
+  if (storedTheme === "dark") document.documentElement.setAttribute("data-theme", "dark");
+  q("#themeBtn").textContent = storedTheme === "dark" ? "☀️" : "🌙";
+
+  if (!token) { showAuthUI(); return; }
+  apiFetch("/api/auth/me").then((me) => {
+    if (me && me.email) { showAppUI(me); }
+    else { showAuthUI(); }
+  }).catch(() => showAuthUI());
+})();
 </script>
 </body>
 </html>

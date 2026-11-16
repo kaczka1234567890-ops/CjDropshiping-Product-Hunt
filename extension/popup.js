@@ -317,10 +317,12 @@ function enterApp(me) {
 }
 
 async function submitAuth() {
+  console.log("[CJ-PH][popup][auth] Step 0: submitAuth() called — mode=" + authMode);
   const emailInput = document.querySelector("#authEmail");
   const passwordInput = document.querySelector("#authPassword");
   const email = emailInput ? emailInput.value.trim() : "";
   const password = passwordInput ? passwordInput.value : "";
+  console.log("[CJ-PH][popup][auth] Step 0: email=" + (email ? email.substring(0,6)+"..." : "EMPTY") + " pwdLen=" + password.length);
   if (!email || !password) { setAuthMessage("Enter your email and password."); return; }
   if (authMode === "signup" && password.length < 8) {
     setAuthMessage("Password must be at least 8 characters.");
@@ -334,7 +336,9 @@ async function submitAuth() {
     const nameInput = document.querySelector("#authName");
     const usernameInput = document.querySelector("#authUsername");
     const phoneInput = document.querySelector("#authPhone");
-    const res = await fetch(`${API_BASE}/api/auth/${authMode === "signup" ? "signup" : "login"}`, {
+    const url = `${API_BASE}/api/auth/${authMode === "signup" ? "signup" : "login"}`;
+    console.log("[CJ-PH][popup][auth] Step 1: POST " + url);
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -346,9 +350,11 @@ async function submitAuth() {
       })
     });
     const data = await res.json().catch(() => ({}));
+    console.log("[CJ-PH][popup][auth] Step 2: response status=" + res.status + " data=" + JSON.stringify(data).substring(0,200));
     if (!res.ok) throw new Error(data.error || "Could not sign in.");
 
     if (authMode === "signup" && !data.token) {
+      console.log("[CJ-PH][popup][auth] Step 3: signup requires email confirmation");
       setAuthMessage("Account created ✓ — confirm your email, then sign in.", true);
       setAuthMode("signin");
       return;
@@ -363,16 +369,19 @@ async function submitAuth() {
     }
 
     await saveSession(data.token);
+    console.log("[CJ-PH][popup][auth] Step 4: token saved, fetching /me...");
     const me = await fetchMe();
     if (!me) {
       const detail = `API returned no profile data (status: ${data.token ? 'unknown' : 'none'}). Check console in chrome://extensions/ → Inspect for details.`;
       throw new Error("Signed in, but the account could not be loaded.\n" + detail);
     }
+    console.log("[CJ-PH][popup][auth] Step 5: /me success — email=" + (me.email||"?"));
 
     // After successful login/signup — show the main app
     setAuthMessage(authMode === "signup" ? "Account created! ✓" : "Signed in successfully! ✓");
     enterApp(me);
   } catch (error) {
+    console.error("[CJ-PH][popup][auth] FAILED:", error.message);
     setAuthMessage(error.message || "Could not sign in.");
   } finally {
     const btn = document.querySelector("#authBtn");
@@ -384,9 +393,11 @@ async function submitAuth() {
 function attachAuthListeners() {
   document.addEventListener("click", (event) => {
     const target = event.target;
+    console.log("[CJ-PH][popup] click event on:", target.tagName, target.id || target.className);
 
     // Sign in / Create account button
     if (target.closest("#authBtn")) {
+      console.log("[CJ-PH][popup] Sign In/Up button clicked — calling submitAuth()");
       event.preventDefault();
       submitAuth();
       return;
@@ -394,6 +405,7 @@ function attachAuthListeners() {
 
     // Toggle between sign in and sign up
     if (target.closest("#toggleAuth")) {
+      console.log("[CJ-PH][popup] Toggle button clicked — switching auth mode");
       event.preventDefault();
       setAuthMode(authMode === "signin" ? "signup" : "signin");
       return;
@@ -401,6 +413,7 @@ function attachAuthListeners() {
 
     // Logout button
     if (target.closest("#logoutBtn")) {
+      console.log("[CJ-PH][popup] Logout button clicked");
       event.preventDefault();
       (async () => {
         try { await api("/api/auth/logout", { method: "POST" }); } catch { /* already dead */ }
@@ -416,6 +429,7 @@ function attachAuthListeners() {
   // Enter key submits the auth form
   document.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && document.querySelector("#authOverlay") && !document.querySelector("#authOverlay").hidden) {
+      console.log("[CJ-PH][popup] Enter key pressed in auth form — calling submitAuth()");
       event.preventDefault();
       submitAuth();
     }
