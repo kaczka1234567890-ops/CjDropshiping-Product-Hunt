@@ -228,12 +228,12 @@ function injectPanel() {
       res = await fetch(url, { method: opts.method || "GET", headers, ...(opts.body ? { body: JSON.stringify(opts.body) } : {}) });
     } catch (err) {
       console.error("[CJ-PH][api] network error:", err?.message || err);
-      throw new Error(`Network error — check your internet connection.`);
+      throw new Error("Network error — check your internet connection.");
     }
     console.log(`[CJ-PH][api] status: ${res.status} ${res.statusText}`);
-    const ct = res.headers.get("content-type") || "";
     let data;
     try {
+      const ct = res.headers.get("content-type") || "";
       data = ct.includes("json") ? await res.json() : await res.text();
     } catch {
       data = await res.text().catch(() => "");
@@ -246,7 +246,7 @@ function injectPanel() {
       throw new Error("Session expired — please sign in again.");
     }
     if (!res.ok) {
-      const errMsg = (typeof data === "object" && data?.error) || data || `HTTP ${res.status}`;
+      const errMsg = (typeof data === "object" && data && data.error) || data || `HTTP ${res.status}`;
       console.warn("[CJ-PH][api] non-ok response:", res.status, errMsg);
       throw new Error(String(errMsg));
     }
@@ -290,87 +290,144 @@ function injectPanel() {
     if (authBtn) authBtn.addEventListener("click", async () => {
       const email = emailIn.value.trim();
       const pwd = passIn.value;
-      console.log("[CJ-PH][auth] submit:", authMode, "email:", email ? email.substring(0, 6) + "..." : "(empty)", "pwd length:", pwd.length);
+      console.log(`[CJ-PH][auth] ===== BUTTON CLICKED ===== mode=${authMode} email=${email ? email.substring(0,6)+'...' : 'EMPTY'} pwdLen=${pwd.length}`);
       if (!email || !pwd) {
+        console.log("[CJ-PH][auth] VALIDATION FAILED: empty fields");
         msgEl.textContent = "Please fill in all fields.";
         msgEl.style.color = "#dc2626";
         return;
       }
       if (authMode === "signup" && pwd.length < 8) {
+        console.log("[CJ-PH][auth] VALIDATION FAILED: password too short");
         msgEl.textContent = "Password must be at least 8 characters.";
         msgEl.style.color = "#dc2626";
         return;
       }
-      msgEl.textContent = "";
-      msgEl.style.color = "#888";
+
+      // ── Step 1: Disable button, show loading ──────────────────
+      console.log("[CJ-PH][auth] Step 1: disabling button, showing loading...");
       authBtn.disabled = true;
       authBtn.textContent = "Loading…";
-      try {
-        const path  = authMode === "signup" ? "/api/auth/signup" : "/api/auth/login";
-        const body  = authMode === "signup"
-          ? { email, password: pwd }
-          : { email, password: pwd };
-        console.log("[CJ-PH][auth] calling", PH_API + path);
-        const data  = await apiFetch(path, { method: "POST", body });
-        console.log("[CJ-PH][auth] response:", data);
+      msgEl.textContent = "";
+      msgEl.style.color = "#888";
 
-        // ── Success path ────────────────────────────────────────
-        if (authMode === "signup") {
-          if (data.token) {
-            // Auto-logged in (no email confirmation required)
-            token = data.token;
-            setAuthToken(token);
-            console.log("[CJ-PH][auth] signup OK — saved token, verifying profile...");
-            try {
-              const me = await apiFetch("/api/auth/me");
-              console.log("[CJ-PH][auth] /me response:", me);
-              if (me && me.email) {
-                showAppUI();
-              } else {
-                throw new Error("Account created but profile could not be loaded.");
-              }
-            } catch (e) {
-              throw new Error(e.message || "Signup succeeded but could not load account. Try signing in instead.");
-            }
-          } else {
-            // Email confirmation required
-            msgEl.textContent = "✅ Account created! Check your email and click the confirmation link, then sign in.";
-            msgEl.style.color = "#16a34a";
+      // ── Step 2: Call the API ──────────────────────────────────
+      const path = authMode === "signup" ? "/api/auth/signup" : "/api/auth/login";
+      const body = { email, password: pwd };
+      console.log(`[CJ-PH][auth] Step 2: calling POST ${PH_API}${path}`);
+      let data;
+      try {
+        data = await apiFetch(path, { method: "POST", body });
+        console.log("[CJ-PH][auth] Step 2 OK — API response:", data);
+      } catch (apiErr) {
+        // API call failed — show error and re-enable
+        console.error("[CJ-PH][auth] Step 2 FAILED:", apiErr?.message || apiErr);
+        const msg = apiErr?.message || "Could not connect to server.";
+        msgEl.textContent = msg;
+        msgEl.style.color = "#dc2626";
+        authBtn.disabled = false;
+        authBtn.textContent = authMode === "signup" ? "Create Account" : "Sign In";
+        return;
+      }
+
+      // ── Step 3: Check response ────────────────────────────────
+      console.log("[CJ-PH][auth] Step 3: checking response...");
+      if (!data) {
+        console.error("[CJ-PH][auth] Step 3 FAILED: data is null/undefined");
+        msgEl.textContent = "Server returned no data.";
+        msgEl.style.color = "#dc2626";
+        authBtn.disabled = false;
+        authBtn.textContent = authMode === "signup" ? "Create Account" : "Sign In";
+        return;
+      }
+
+      // ── Step 4: Handle signup ─────────────────────────────────
+      if (authMode === "signup") {
+        console.log("[CJ-PH][auth] Step 4: handling signup response...");
+        if (data.token) {
+          // Signup succeeded AND auto-logged in
+          console.log("[CJ-PH][auth] Step 4: signup auto-login — token received");
+          token = data.token;
+          setAuthToken(token);
+          console.log("[CJ-PH][auth] Step 4: token saved to localStorage");
+
+          // Verify with /me
+          console.log("[CJ-PH][auth] Step 4: verifying with /api/auth/me...");
+          let me;
+          try {
+            me = await apiFetch("/api/auth/me");
+            console.log("[CJ-PH][auth] Step 4: /me response:", me);
+          } catch (meErr) {
+            console.error("[CJ-PH][auth] Step 4: /me failed:", meErr?.message);
+            msgEl.textContent = "Signed in but could not load profile. Try signing in again.";
+            msgEl.style.color = "#dc2626";
             authBtn.disabled = false;
             authBtn.textContent = "Sign In";
             return;
           }
-        } else {
-          // Login — must have token
-          if (!data.token) {
-            throw new Error(data.error || "Invalid credentials.");
+
+          if (me && me.email) {
+            console.log("[CJ-PH][auth] Step 4: SUCCESS — showing app UI");
+            showAppUI();
+          } else {
+            console.error("[CJ-PH][auth] Step 4: /me returned no email");
+            msgEl.textContent = "Account created but profile could not be loaded.";
+            msgEl.style.color = "#dc2626";
+            authBtn.disabled = false;
+            authBtn.textContent = "Sign In";
           }
-          token = data.token;
-          setAuthToken(token);
-          console.log("[CJ-PH][auth] login OK — saved token, verifying profile...");
-          try {
-            const me = await apiFetch("/api/auth/me");
-            console.log("[CJ-PH][auth] /me response:", me);
-            if (me && me.email) {
-              showAppUI();
-            } else {
-              throw new Error("Signed in but could not load account profile.");
-            }
-          } catch (e) {
-            throw new Error(e.message || "Login succeeded but profile could not be loaded.");
-          }
-        }
-      } catch (err) {
-        const msg = err.message || "Authentication failed";
-        console.error("[CJ-PH][auth] error:", msg);
-        if (msg.includes("already registered") || msg.toLowerCase().includes("already")) {
-          msgEl.textContent = "This email is already registered. Please sign in instead.";
         } else {
-          msgEl.textContent = msg;
+          // Signup succeeded but email confirmation required
+          console.log("[CJ-PH][auth] Step 4: signup requires email confirmation");
+          msgEl.textContent = "✅ Account created! Check your email and click the confirmation link, then sign in.";
+          msgEl.style.color = "#16a34a";
+          authBtn.disabled = false;
+          authBtn.textContent = "Sign In";
         }
+        return;
+      }
+
+      // ── Step 5: Handle login ──────────────────────────────────
+      console.log("[CJ-PH][auth] Step 5: handling login response...");
+      if (!data.token) {
+        console.error("[CJ-PH][auth] Step 5 FAILED: no token in response");
+        msgEl.textContent = data.error || "Invalid email or password.";
         msgEl.style.color = "#dc2626";
         authBtn.disabled = false;
-        authBtn.textContent = authMode === "signup" ? "Create Account" : "Sign In";
+        authBtn.textContent = "Sign In";
+        return;
+      }
+
+      // Login succeeded — save token
+      console.log("[CJ-PH][auth] Step 5: login OK — saving token...");
+      token = data.token;
+      setAuthToken(token);
+      console.log("[CJ-PH][auth] Step 5: token saved to localStorage");
+
+      // Verify with /me
+      console.log("[CJ-PH][auth] Step 5: verifying with /api/auth/me...");
+      let me;
+      try {
+        me = await apiFetch("/api/auth/me");
+        console.log("[CJ-PH][auth] Step 5: /me response:", me);
+      } catch (meErr) {
+        console.error("[CJ-PH][auth] Step 5: /me failed:", meErr?.message);
+        msgEl.textContent = "Signed in but could not load profile. Please try again.";
+        msgEl.style.color = "#dc2626";
+        authBtn.disabled = false;
+        authBtn.textContent = "Sign In";
+        return;
+      }
+
+      if (me && me.email) {
+        console.log("[CJ-PH][auth] Step 5: SUCCESS — showing app UI");
+        showAppUI();
+      } else {
+        console.error("[CJ-PH][auth] Step 5: /me returned no email");
+        msgEl.textContent = "Signed in but profile could not be loaded.";
+        msgEl.style.color = "#dc2626";
+        authBtn.disabled = false;
+        authBtn.textContent = "Sign In";
       }
     });
 
