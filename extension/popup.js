@@ -2055,17 +2055,6 @@ function init() {
         }
       });
 
-      // Web app button — opens the full web app in a new browser tab
-      const webAppBtn = document.querySelector("#webAppBtn");
-      if (webAppBtn) {
-        webAppBtn.addEventListener("click", () => openApp(`${API_BASE}/`));
-      }
-
-      // Admin dashboard button — opens the admin panel in a new browser tab
-      const adminBtn = document.querySelector("#adminBtn");
-      if (adminBtn) {
-        adminBtn.addEventListener("click", () => openApp(`${API_BASE}/admin`));
-      }
     }
 
     // Reset filters button
