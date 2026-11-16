@@ -22,6 +22,19 @@ create table if not exists profiles (
   updated_at timestamptz default now()
 );
 
+-- 2. Admin policies table — stores role/status per user
+create table if not exists admin_policies (
+  user_id uuid references profiles(id) on delete cascade primary key,
+  is_blocked boolean default false,
+  is_premium boolean default false,
+  daily_api_limit integer,
+  monthly_api_limit integer,
+  daily_api_count integer default 0,
+  monthly_api_count integer default 0,
+  features jsonb default '{"search": true, "listing": true, "enrich": true}',
+  updated_at timestamptz default now()
+);
+
 -- Add missing columns if upgrading from older schema
 alter table profiles add column if not exists username text;
 alter table profiles add column if not exists phone text;

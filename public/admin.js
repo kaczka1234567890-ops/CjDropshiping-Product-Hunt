@@ -65,6 +65,17 @@ document.getElementById("logoutBtn").addEventListener("click", async () => {
   window.location.href = "/";
 });
 
+// ── Stats ─────────────────────────────────────────────────
+async function loadStats() {
+  try {
+    const { totalRegistered, onlineNow, activeToday, bannedCount } = await api("/admin/stats");
+    if (totalRegistered !== undefined) document.getElementById("totalRegisteredCount").textContent = totalRegistered;
+    if (onlineNow !== undefined) document.getElementById("onlineNowCount").textContent = onlineNow;
+    if (activeToday !== undefined) document.getElementById("activeTodayCount").textContent = activeToday;
+    if (bannedCount !== undefined) document.getElementById("bannedCount").textContent = bannedCount;
+  } catch { /* ignore */ }
+}
+
 // ── Online users badge ─────────────────────────────────────
 async function loadOnlineCount() {
   try {
@@ -81,6 +92,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // Load online users when users tab is active
     const usersTab = document.querySelector('.tab[data-tab="users"]');
     if (usersTab && usersTab.classList.contains("active")) {
+      loadStats();
       loadUsers();
       loadOnlineUsers();
     }
@@ -185,14 +197,18 @@ async function loadUsers() {
       const monthly = p.monthly_api_limit ?? null;
       const displayName = u.full_name || u.username || u.email || "?";
       const subName = u.username && u.full_name ? ` · @${esc(u.username)}` : !u.full_name && u.username ? ` · @${esc(u.username)}` : "";
+      const isBlocked = p.is_blocked;
+      const isPremium = u.is_premium;
+      const isAdmin = u.is_admin;
       return `
         <div class="user-row">
           <div class="user-avatar">${esc(((u.full_name || u.username || u.email || "?")[0] || "?").toUpperCase())}</div>
           <div class="user-info">
             <div class="user-email">${esc(displayName)}${subName}</div>
             <div class="user-meta">
-              ${p.is_blocked ? '<span class="user-badge badge-blocked">Blocked</span> ' : '<span class="user-badge badge-ok">Active</span> '}
-              ${u.isAdmin ? '<span class="user-badge badge-admin">Admin</span> ' : ""}
+              ${isBlocked ? '<span class="user-badge badge-blocked">Blocked</span> ' : '<span class="user-badge badge-ok">Active</span> '}
+              ${isPremium ? '<span class="user-badge badge-premium">Premium</span> ' : '<span class="user-badge badge-standard">Standard</span> '}
+              ${isAdmin ? '<span class="user-badge badge-admin">Admin</span> ' : ""}
               ${u.hasCjKey ? "" : '<span class="user-badge badge-blocked">No API key</span> '}
               · Joined ${new Date(u.created_at).toLocaleDateString()}
               ${daily !== null ? ` · Daily ${p.daily_api_count ?? 0}/${daily}` : ""}
@@ -201,7 +217,9 @@ async function loadUsers() {
             </div>
           </div>
           <div class="user-actions">
-            <button class="btn-sm ${p.is_blocked ? "btn-success" : "btn-danger"}" data-action="block" data-id="${esc(u.id)}">${p.is_blocked ? "Unblock" : "Block"}</button>
+            <button class="btn-sm ${isBlocked ? "btn-success" : "btn-danger"}" data-action="block" data-id="${esc(u.id)}">${isBlocked ? "Unblock" : "Block"}</button>
+            <button class="btn-sm btn-secondary" data-action="premium" data-id="${esc(u.id)}">${isPremium ? "Set Standard" : "Set Premium"}</button>
+            <button class="btn-sm btn-secondary" data-action="admin" data-id="${esc(u.id)}">${isAdmin ? "Remove Admin" : "Make Admin"}</button>
             <button class="btn-sm btn-secondary" data-action="detail" data-id="${esc(u.id)}">Details</button>
           </div>
         </div>`;
@@ -210,6 +228,8 @@ async function loadUsers() {
     list.querySelectorAll("[data-action]").forEach((btn) => {
       btn.addEventListener("click", () => {
         if (btn.dataset.action === "block") toggleBlock(btn.dataset.id);
+        else if (btn.dataset.action === "premium") togglePremium(btn.dataset.id);
+        else if (btn.dataset.action === "admin") toggleAdmin(btn.dataset.id);
         else openUserDetail(btn.dataset.id);
       });
     });
@@ -226,6 +246,29 @@ async function toggleBlock(userId) {
     const blocked = !(user.policy && user.policy.is_blocked);
     await api(`/admin/users/${userId}/block`, { method: "POST", body: { blocked } });
     await loadUsers();
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+// ── Premium / Admin toggles ───────────────────────────────
+async function togglePremium(userId) {
+  try {
+    await api(`/admin/users/${userId}/premium`, { method: "POST", body: { isPremium: true } });
+    await loadUsers();
+    loadStats();
+    alert("Premium status updated.");
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function toggleAdmin(userId) {
+  try {
+    await api(`/admin/users/${userId}/admin`, { method: "POST", body: { isAdmin: true } });
+    await loadUsers();
+    loadStats();
+    alert("Admin status updated.");
   } catch (error) {
     alert(error.message);
   }

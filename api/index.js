@@ -1228,6 +1228,153 @@ app.get("/api/suppliers/best-sellers", requireAuth, async (req, res) => {
       detail: error.publicMessage || error.message
     });
   }
+}
+
+// ── Admin: User List ────────────────────────────────────────
+app.get("/admin/users", requireAuth, async (req, res) => {
+  try {
+    const { data, error, count } = await supabase
+      .from("profiles")
+      .select("*, admin_policies(*)", { count: "exact" })
+      .order("created_at", { ascending: false });
+    if (error) throw error;
+    res.json({ users: data, total: count });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ── Admin: Stats — total registered, online, active, banned ────
+app.get("/admin/stats", requireAuth, async (req, res) => {
+  try {
+    // Total registered users (from profiles)
+    const [{ count: totalRegistered }] = await supabase
+      .from("profiles")
+      .select("*", { count: "exact", head: true });
+
+    // Online users (is_online = true, last_seen within 90s)
+    const cutoff = new Date(Date.now() - 90 * 1000).toISOString();
+    const [{ count: onlineNow }] = await supabase
+      .from("profiles")
+      .select("*", { count: "exact", head: true })
+      .gt("last_seen", cutoff);
+
+    // Active users today (daily_api_count > 0)
+    const [{ count: activeToday }] = await supabase
+      .from("admin_policies")
+      .select("*, profiles(id)", { count: "exact", head: true })
+      .gt("daily_api_count", 0);
+
+    // Banned users (is_blocked = true)
+    const [{ count: bannedCount }] = await supabase
+      .from("admin_policies")
+      .select("*, profiles(id)", { count: "exact", head: true })
+      .eq("is_blocked", true);
+
+    res.json({ totalRegistered, onlineNow, activeToday, bannedCount });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ── Admin: Get single user detail ───────────────────────────
+app.get("/admin/users/:userId", requireAuth, async (req, res) => {
+  try {
+    const { data: user, error } = await supabase
+      .from("profiles").select("*, admin_policies(*)")
+      .eq("id", req.params.userId).maybeSingle();
+    if (error) throw error;
+    if (!user) return res.status(404).json({ error: "User not found" });
+    res.json({ user });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ── Admin: Toggle block/unblock user ────────────────────────
+app.post("/admin/users/:userId/block", requireAuth, async (req, res) => {
+  try {
+    const { blocked } = req.body || {};
+    const { data: policy, error } = await supabase
+      .from("admin_policies")
+      .upsert({
+        user_id: req.params.userId,
+        is_blocked: Boolean(blocked)
+      }, { onConflict: "user_id" });
+    if (error) throw error;
+    res.json({ ok: true, is_blocked: policy.is_blocked });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ── Admin: Set premium / standard user ──────────────────────
+app.post("/admin/users/:userId/premium", requireAuth, async (req, res) => {
+  try {
+    const { isPremium } = req.body || {};
+    const { data: policy, error } = await supabase
+      .from("admin_policies")
+      .upsert({
+        user_id: req.params.userId,
+        is_premium: Boolean(isPremium)
+      }, { onConflict: "user_id" });
+    if (error) throw error;
+    res.json({ ok: true, is_premium: policy.is_premium });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ── Admin: Make user / remove admin ─────────────────────────
+app.post("/admin/users/:userId/admin", requireAuth, async (req, res) => {
+  try {
+    const { isAdmin } = req.body || {};
+    const { data: profile, error } = await supabase
+      .from("profiles")
+      .upsert({
+        id: req.params.userId,
+        is_admin: Boolean(isAdmin)
+      }, { onConflict: "id" });
+    if (error) throw error;
+    res.json({ ok: true, is_admin: profile.is_admin });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ── Admin: Update user limits/features ──────────────────────
+app.post("/admin/users/:userId/limits", requireAuth, async (req, res) => {
+  try {
+    const { dailyLimit, monthlyLimit, features } = req.body || {};
+    const { data: policy, error } = await supabase
+      .from("admin_policies")
+      .upsert({
+        user_id: req.params.userId,
+        daily_api_limit: dailyLimit !== undefined ? Number(dailyLimit) : undefined,
+        monthly_api_limit: monthlyLimit !== undefined ? Number(monthlyLimit) : undefined,
+        features: features || undefined
+      }, { onConflict: "user_id" });
+    if (error) throw error;
+    res.json({ ok: true, policy });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ── Admin: Reset user daily counter ─────────────────────────
+app.post("/admin/users/:userId/reset-daily", requireAuth, async (req, res) => {
+  try {
+    const { data: policy, error } = await supabase
+      .from("admin_policies")
+      .upsert({
+        user_id: req.params.userId,
+        daily_api_count: 0
+      }, { onConflict: "user_id" });
+    if (error) throw error;
+    res.json({ ok: true, dailyCount: 0 });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // Profit calculation endpoint — estimate potential profit for a product
