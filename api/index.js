@@ -23,6 +23,7 @@ import {
   runWithApiKey
 } from "./cjClient.js";
 import { readSettings } from "./settings.js";
+import { analyzeProduct, sortProducts, estimateProfit } from "./scoring.js";
 
 // ── In-memory product detail cache (TTL: 5 min) ──
 // Key: `${userId}:${pid}` — scoped per user since CJ keys differ
@@ -49,7 +50,6 @@ function setCachedProductDetail(userId, pid, data) {
     toDelete.forEach(([k]) => productDetailCache.delete(k));
   }
 }
-import { analyzeProduct, sortProducts, estimateProfit } from "./scoring.js";
 
 // ── Supabase client (service role — server-side only) ────
 let SUPABASE_URL = null;
