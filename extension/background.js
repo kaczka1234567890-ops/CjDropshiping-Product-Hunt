@@ -1,7 +1,3 @@
-chrome.sidePanel
-  .setPanelBehavior({ openPanelOnActionClick: true })
-  .catch((error) => console.warn("Side panel behavior not set:", error));
-
 // Heartbeat — report active user to admin panel (every 30s for real-time online status)
 setInterval(async () => {
   try {
@@ -42,3 +38,12 @@ chrome.webRequest.onBeforeRequest.addListener(
   { urls: ["<all_urls>"] },
   ["blocking"]
 );
+
+// ── Side panel setup ──────────────────────────────────────────────
+chrome.runtime.onInstalled.addListener(async () => {
+  try {
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+  } catch (error) {
+    console.warn("Side panel behavior not set:", error);
+  }
+});

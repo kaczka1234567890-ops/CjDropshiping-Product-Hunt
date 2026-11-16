@@ -105,6 +105,11 @@ async function api(path, options = {}) {
   return res;
 }
 
+// ── Open URL in a browser tab (never target="_blank" from a popup — Chrome blocks it)
+function openApp(url) {
+  chrome.tabs.create({ url });
+}
+
 let enrichMap = {};
 let pendingEnrich = new Set();
 let shownProducts = [];
@@ -2051,6 +2056,18 @@ function init() {
           localStorage.setItem("theme", "dark");
         }
       });
+
+      // Web app button — opens the full web app in a new browser tab
+      const webAppBtn = document.querySelector("#webAppBtn");
+      if (webAppBtn) {
+        webAppBtn.addEventListener("click", () => openApp(`${API_BASE}/`));
+      }
+
+      // Admin dashboard button — opens the admin panel in a new browser tab
+      const adminBtn = document.querySelector("#adminBtn");
+      if (adminBtn) {
+        adminBtn.addEventListener("click", () => openApp(`${API_BASE}/admin`));
+      }
     }
 
     // Reset filters button
