@@ -267,25 +267,51 @@ function injectPanel() {
       const pwd = passIn.value;
       if (!email || !pwd) { alert("Please fill in all fields."); return; }
       msgEl.textContent = "";
+      msgEl.style.color = "#888";
       authBtn.disabled = true;
       authBtn.textContent = "Loading…";
       try {
         const path  = authMode === "signup" ? "/api/auth/signup" : "/api/auth/login";
         const data  = await apiFetch(path, { method: "POST", body: { email, password: pwd } });
-        if (!data || !data.token) {
-          authBtn.disabled = false;
-          authBtn.textContent = authMode === "signup" ? "Create Account" : "Sign In";
-          alert(authMode === "signup" ? "Account created! Check your email and sign in." : "Invalid credentials.");
-          return;
+        if (!data) {
+          throw new Error("No response from server");
         }
-        token = data.token;
-        setAuthToken(token);
-        if (saveChk && saveChk.checked) {
-          try { localStorage.setItem("cjphSavedPwd", JSON.stringify({ email, pwd })); } catch {}
+        // ── Success path ────────────────────────────────────────
+        if (authMode === "signup") {
+          // Signup may or may not return a token (depends on email confirmation setting)
+          if (data.token) {
+            // Auto-logged in (no email confirmation required)
+            token = data.token;
+            setAuthToken(token);
+            if (saveChk && saveChk.checked) {
+              try { localStorage.setItem("cjphSavedPwd", JSON.stringify({ email, pwd })); } catch {}
+            }
+            showAppUI();
+          } else {
+            // Email confirmation required — tell user to check inbox
+            msgEl.textContent = "✅ Account created! Check your email and click the confirmation link, then sign in.";
+            msgEl.style.color = "#16a34a";
+            authBtn.disabled = false;
+            authBtn.textContent = "Sign In";
+          }
+        } else {
+          // Login always returns a token on success
+          if (data.token) {
+            token = data.token;
+            setAuthToken(token);
+            if (saveChk && saveChk.checked) {
+              try { localStorage.setItem("cjphSavedPwd", JSON.stringify({ email, pwd })); } catch {}
+            }
+            showAppUI();
+          } else {
+            throw new Error(data.error || "Invalid credentials");
+          }
         }
-        showAppUI();
       } catch (err) {
-        msgEl.textContent = err.message || "Authentication failed";
+        const msg = err.message || "Authentication failed";
+        msgEl.textContent = authMode === "signup"
+          ? (msg.includes("already") ? "This email is already registered. Please sign in instead." : msg)
+          : msg;
         msgEl.style.color = "#dc2626";
         authBtn.disabled = false;
         authBtn.textContent = authMode === "signup" ? "Create Account" : "Sign In";
