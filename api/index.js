@@ -25,6 +25,9 @@ import {
 import { readSettings } from "./settings.js";
 import { analyzeProduct, sortProducts, estimateProfit } from "./scoring.js";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.resolve(__dirname, "..");
+
 // ── In-memory product detail cache (TTL: 5 min) ──
 // Key: `${userId}:${pid}` — scoped per user since CJ keys differ
 const productDetailCache = new Map();
