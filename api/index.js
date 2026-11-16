@@ -71,23 +71,18 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !ENCRYPTION_KEY) {
     !ENCRYPTION_KEY && "ENCRYPTION_KEY"
   ].filter(Boolean);
   console.error(`
-✗ Missing required environment variable(s) in .env: ${missing.join(", ")}
-
-  Setup:
-    1. Create a free project at https://supabase.com
-    2. In Supabase: SQL Editor → paste supabase-schema.sql → Run
-    3. In Supabase: Settings → API → copy "Project URL" and the service_role key
-    4. Generate an encryption key:
-         node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-    5. Put all three values in .env (see .env.example), then run npm start
+✗ Missing required environment variable(s): ${missing.join(", ")}
+  ENV_VARS: SUPABASE_URL=${!!SUPABASE_URL}, SERVICE_KEY=${!!SUPABASE_SERVICE_KEY}, ENCRYPTION_KEY=${!!ENCRYPTION_KEY}
 `);
-  process.exit(1);
+  // Return JSON error instead of process.exit to avoid FUNCTION_INVOCATION_FAILED
+  console.error("STACK:", new Error().stack?.split('\n').slice(0,5).join('\n'));
+  throw new Error(`Missing env vars: ${missing.join(", ")}`);
 }
 
 if (!/^[0-9a-fA-F]{64}$/.test(ENCRYPTION_KEY)) {
   console.error("✗ ENCRYPTION_KEY must be 64 hex characters (32 bytes). Generate one with:\n" +
     '  node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
-  process.exit(1);
+  throw new Error('Invalid ENCRYPTION_KEY format');
 }
 
 // The data client ALWAYS talks to PostgREST as the service role:
