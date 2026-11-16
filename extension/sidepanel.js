@@ -384,7 +384,7 @@ document.addEventListener("click", async (evt) => {
 
   // ── Toolbar buttons ──
   if(t.id==="profileBtn"||t.closest("#profileBtn")) { evt.preventDefault(); await CJPH.openProfile(); return; }
-  if(t.id==="helpBtn"||t.closest("#profileHelpBtn")) { alert("Support:\n\nWhatsApp: +880 130 952 4519\nVisit: www.smtools.online\n\nFor API key setup go to My CJ → API settings."); return; }
+  if(t.id==="helpBtn"||t.closest("#helpBtn")) { alert("Support:\n\nWhatsApp: +880 130 952 4519\nVisit: www.smtools.online\n\nFor API key setup go to My CJ → API settings."); return; }
   if(t.id==="keyBtn"||t.closest("#keyBtn")) { alert("API Key Settings:\n\nGo to cjdropshipping.com → My CJ → API → Generate New Key\nThen paste it here when prompted.\n\nYour key is encrypted and stored securely."); return; }
   if(t.id==="logoutBtn"||t.closest("#logoutBtn")) { evt.preventDefault(); CJPH.logout(); return; }
   if(t.id==="themeBtn"||t.closest("#themeBtn")) { CJPH.toggleTheme(); return; }
