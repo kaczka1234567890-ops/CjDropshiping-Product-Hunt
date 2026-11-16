@@ -2731,7 +2731,18 @@ if (openFloatingBtn) {
 }
 
 function openAlwaysOnWindow() {
-  // Open as a resizable window near the current popup
+  // Check if we're on a CJ page — show the inline floating panel instead
+  const isCJ = /cjdropshipping\.com/.test(window.location.href);
+  if (isCJ) {
+    // Send message to content script to show the overlay
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        chrome.tabs.sendMessage(tabs[0].id, { action: "showOverlay" }).catch(() => {});
+      }
+    });
+    return;
+  }
+  // Fallback for non-CJ pages: open a Chrome popup window
   const w = window.screenX + 400;
   const h = window.screenY;
   chrome.windows.create({
@@ -2742,7 +2753,6 @@ function openAlwaysOnWindow() {
     left: w,
     top: h
   }).catch(() => {
-    // Fallback for browsers that don't support chrome.windows.create from popup
     window.open("popup.html", "CJProductHunter_floating", "width=380,height=600,left=" + w + ",top=" + h + ",resizable=yes,scrollbars=yes");
   });
 }
