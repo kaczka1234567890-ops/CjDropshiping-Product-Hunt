@@ -24,6 +24,7 @@ const form = document.querySelector("#searchForm");
 const queryInput = document.querySelector("#query");
 const searchButton = document.querySelector("#searchButton");
 const trendingButton = document.querySelector("#trendingButton");
+const trendingCountrySelect = document.querySelector("#trendingCountrySelect");
 const bestSellingButton = document.querySelector("#bestSellingButton");
 const bestSellerSupplierButton = document.querySelector("#bestSellerSupplierButton");
 const bestSellerCountrySelect = document.querySelector("#bestSellerCountry");
@@ -1914,7 +1915,12 @@ async function runSearch({ trending = false, bestSelling = false, category = nul
         pageSize: "50",
         sort: bestSelling ? "winning" : "winning"
       });
-      if (trending) params.set("trending", "1");
+      if (trending) {
+        params.set("trending", "1");
+        // Add country filter from trending country selector
+        const tc = trendingCountrySelect ? trendingCountrySelect.value : "";
+        if (tc) params.set("country", tc);
+      }
       if (f.minPrice) params.set("minPrice", f.minPrice);
       if (f.maxPrice) params.set("maxPrice", f.maxPrice);
       if (f.minStock) params.set("minStock", f.minStock);
@@ -2060,6 +2066,7 @@ function init() {
           if (select) select.value = select.dataset.defaultValue || select.options[0].value;
         });
         if (countryFilterBar) countryFilterBar.hidden = true;
+        if (trendingCountrySelect) trendingCountrySelect.style.display = "none";
         if (queryInput) queryInput.value = "";
         if (searchButton) searchButton.disabled = false;
         if (trendingButton) trendingButton.disabled = false;
@@ -2080,7 +2087,21 @@ function init() {
     // Trending button
     if (trendingButton) {
       trendingButton.addEventListener("click", () => {
+        // Show country selector for trending mode
+        if (trendingCountrySelect) {
+          trendingCountrySelect.style.display = "inline-block";
+          trendingCountrySelect.focus();
+        }
         runSearch({ trending: true });
+      });
+    }
+
+    // Country selector change for trending
+    if (trendingCountrySelect) {
+      trendingCountrySelect.addEventListener("change", () => {
+        if (lastSearchParams.trending) {
+          runSearch({ trending: true });
+        }
       });
     }
 

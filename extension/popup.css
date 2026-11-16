@@ -69,6 +69,8 @@ body{margin:0;padding:14px;width:360px;max-height:580px;overflow-y:auto;font-fam
 .modes{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
 .chip{background:var(--bg2);border:1px solid var(--border);color:var(--text);font-size:11px;font-weight:700;padding:6px 10px;border-radius:999px;cursor:pointer}
 .chip.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+#trendingCountrySelect{padding:5px 8px;border-radius:999px;border:1px solid var(--border);font-size:11px;font-weight:600;background:var(--bg2);color:var(--text);cursor:pointer;max-width:140px}
+#trendingCountrySelect:hover{border-color:var(--primary)}
 .row.tags span{background:var(--tag-bg);border-radius:6px;padding:2px 6px;font-size:10px;color:var(--tag-text)}
 .row.cost{color:var(--text)}
 .search input{flex:1;min-width:0;border:1px solid var(--border2);border-radius:9px;padding:10px 11px;font:inherit;background:var(--input-bg);color:var(--text)}
